@@ -12,7 +12,6 @@
  *
  * This file is licenced under the GPL.
  */
-
 #include <linux/clk.h>
 #include <linux/dma-mapping.h>
 #include <linux/gpio/consumer.h>
@@ -42,6 +41,7 @@
 struct at91_usbh_data {
 	struct gpio_desc *vbus_pin[AT91_MAX_USBH_PORTS];
 	struct gpio_desc *overcurrent_pin[AT91_MAX_USBH_PORTS];
+	struct gpio_desc *id_pin[AT91_MAX_USBH_PORTS];
 	u8 ports;				/* number of ports on root hub */
 	u8 overcurrent_supported;
 	u8 overcurrent_status[AT91_MAX_USBH_PORTS];
@@ -346,7 +346,12 @@ static int ohci_at91_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 		case USB_PORT_FEAT_POWER:
 			dev_dbg(hcd->self.controller, "SetPortFeat: POWER\n");
 			if (valid_port(wIndex)) {
-				ohci_at91_usb_set_power(pdata, wIndex, 1);
+				if(!gpiod_get_value(pdata->id_pin[wIndex])){
+					ohci_at91_usb_set_power(pdata, wIndex, 1);
+				}else{
+					dev_dbg(hcd->self.controller,
+						"Passed, device mode\n");
+				}
 				ret = 0;
 			}
 
@@ -498,6 +503,42 @@ static irqreturn_t ohci_hcd_at91_overcurrent_irq(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+static irqreturn_t ohci_hcd_at91_otg_id_irq(int irq, void *data)
+{
+	struct platform_device *pdev = data;
+	struct at91_usbh_data *pdata = dev_get_platdata(&pdev->dev);
+	int val, port;
+
+	/* From the GPIO notifying the OTG ID situation, find
+	* out the corresponding port */
+	at91_for_each_port(port) {
+		if (gpiod_to_irq(pdata->id_pin[port]) == irq)
+			break;
+	}
+
+	if (port == AT91_MAX_USBH_PORTS) {
+		dev_err(& pdev->dev, "OTG ID interrupt from unknown GPIO\n");
+		return IRQ_HANDLED;
+	}
+
+	/* debounce */
+	udelay(10);
+
+	val = gpiod_get_value(pdata->id_pin[port]);
+
+	if (val) {
+		dev_dbg(& pdev->dev, "OTG ID gpio changed, new value: device\n");
+		dev_dbg(& pdev->dev, "Disabling output VBUS power\n");
+		ohci_at91_usb_set_power(pdata, port, 0);
+	} else {
+		dev_dbg(& pdev->dev, "OTG ID gpio changed, new value: host\n");
+		dev_dbg(& pdev->dev, "Enabling output VBUS power\n");
+		ohci_at91_usb_set_power(pdata, port, 1);
+	}
+
+	return IRQ_HANDLED;
+}
+
 static const struct of_device_id at91_ohci_dt_ids[] = {
 	{ .compatible = "atmel,at91rm9200-ohci" },
 	{ /* sentinel */ }
@@ -537,9 +578,33 @@ static int ohci_hcd_at91_drv_probe(struct platform_device *pdev)
 		if (i >= pdata->ports)
 			break;
 
+		pdata->id_pin[i] =
+				devm_gpiod_get_index_optional(&pdev->dev, "atmel,id",
+									i, GPIOD_IN);
+		if (!pdata->id_pin[i])
+			continue;
+		if (IS_ERR(pdata->id_pin[i])) {
+			err = PTR_ERR(pdata->id_pin[i]);
+			dev_err(&pdev->dev, "unable to claim gpio \"id\": %d\n", err);
+			continue;
+		}
+
+		ret = devm_request_irq(&pdev->dev,
+								gpiod_to_irq(pdata->id_pin[i]),
+								ohci_hcd_at91_otg_id_irq,
+								IRQF_SHARED,
+								"ohci_otg_id", pdev);
+		if (ret)
+		dev_info(&pdev->dev, "failed to request gpio \"id\" IRQ\n");
+	}
+
+	at91_for_each_port(i) {
+		if (i >= pdata->ports)
+			break;
+
 		pdata->vbus_pin[i] =
 			devm_gpiod_get_index_optional(&pdev->dev, "atmel,vbus",
-						      i, GPIOD_OUT_HIGH);
+						      i, GPIOD_OUT_LOW);
 		if (IS_ERR(pdata->vbus_pin[i])) {
 			err = PTR_ERR(pdata->vbus_pin[i]);
 			dev_err(&pdev->dev, "unable to claim gpio \"vbus\": %d\n", err);
