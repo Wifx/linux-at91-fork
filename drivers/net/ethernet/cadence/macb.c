@@ -833,7 +833,7 @@ static int gem_rx(struct macb *bp, int budget)
 		count++;
 
 		if (!(ctrl & MACB_BIT(RX_SOF) && ctrl & MACB_BIT(RX_EOF))) {
-			netdev_err(bp->dev,
+			netdev_warn(bp->dev,
 				   "not whole frame pointed by descriptor\n");
 			bp->stats.rx_dropped++;
 			break;
