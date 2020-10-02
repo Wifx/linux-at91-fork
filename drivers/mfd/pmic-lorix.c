@@ -311,7 +311,7 @@ static int reg_feature2_get(struct attiny *attiny, reg_feature2_t *reg_feature2)
 static ssize_t dev_version_show(struct device *dev,
                 struct device_attribute *attr, char *buf)
 {
-    return sprintf(buf, "%s\n", "1.0");
+    return sprintf(buf, "%s\n", "1.1.0");
 }
 
 static ssize_t boot_state_show(struct device *dev,
@@ -366,12 +366,178 @@ static ssize_t product_type_show(struct device *dev,
     return sprintf(buf, "%s\n", cache->type);
 }
 
+static int strcompare(const char *str1, const char *str2)
+{
+    int result;
+    size_t len1, len2;
+
+    len1 = strlen(str1);
+    len2 = strlen(str2);
+    
+    if (len1 < len2) {
+        return -2; 
+    } else if (len1 > len2) {
+        return 2;
+    }
+    
+    result = strncmp(str1, str2, len1);
+    if (result < 0) {
+        return -1;
+    } else if (result > 0) {
+        return 1;
+    }
+    
+    return 0;
+}
+
+struct hw_ver {
+    int major;
+    int minor;
+    int revision;
+    int bom;
+};
+
+static int parse_uint(const char *str, size_t len, int *result) {
+    int index;
+    char pointer[20];
+    long int res;
+    *result = -1;
+    
+    for(index = 0; index < len && index < sizeof(pointer)-1; index++){
+        if (isdigit(str[index])) {
+            pointer[index] = str[index];
+        } else {
+            break;
+        }
+    }
+    if (index == sizeof(pointer)-1 && isdigit(str[index])) {
+        return -ERANGE;
+    } else {
+        pointer[index] = '\0';
+    }
+    
+    if (kstrtol(pointer, 10, &res)) {
+        return -EINVAL;
+    } else if (res < 0 || res > INT_MAX) {
+        return -ERANGE;
+    }
+    *result = res;
+    return index;
+}
+
+static int parse_hw_ver(const char * str, struct hw_ver *version) {
+    size_t len = strlen(str);
+    size_t i = 0, j;
+    long res;
+    char pointer[20];
+    if (len >= sizeof(pointer)) {
+        return -EINVAL;
+    }
+    version->major = -1; version->minor = -1;
+    version->revision = -1; version->bom = -1;
+    
+    // major
+    if (i < len) {
+        if ((res = parse_uint(&str[i], len - i, &version->major)) < 0){
+            return res;
+        }
+        i += res;
+    }
+    
+    // point between major and minor
+    if (i < len && str[i++] != '.') {
+        return -EINVAL;
+    }
+    //minor
+    if (i < len) {
+        if ((res = parse_uint(&str[i], len - i, &version->minor)) < 0){
+            return res;
+        }
+        i += res;
+    }
+    //revision
+    if (i < len) {
+        if (!isalpha(str[i]) || (str[i+1] != '\0' && !isdigit(str[i+1]))) {
+            return -EINVAL;
+        }
+        version->revision = (int)(tolower(str[i++])-'a');
+    }
+    // BOM
+    if (i < len) {
+        if ((res = parse_uint(&str[i], len - i, &version->bom)) < 0){
+            return res;
+        }
+        i += res;
+    }
+    return 0;
+}
+
+static inline int int_compare(int int1, int int2) {
+    if (int1 < int2) {
+        return -1;
+    } else if (int1 > int2) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+static int hw_ver_compare(struct hw_ver *ver1, struct hw_ver *ver2) {
+    int cmp;
+    // compare major
+    if ((cmp = int_compare(ver1->major, ver2->major))){
+        return cmp;
+    }
+    // compare minor
+    if ((cmp = int_compare(ver1->minor, ver2->minor))){
+        return cmp;
+    }
+    // compare revision
+    if ((cmp = int_compare((int)ver1->revision, (int)ver2->revision))){
+        return cmp;
+    }
+    // compare bom
+    if ((cmp = int_compare(ver1->bom, ver2->bom))){
+        return cmp;
+    }
+    return 0;
+}
+
+static ssize_t memory_ram_show(struct device *dev,
+                struct device_attribute *attr, char *buf)
+{
+    attiny_cache_t *cache = ((struct attiny *)dev_get_drvdata(dev))->cache;
+    if (!strcompare(cache->name, "LORIX One")) {
+        return sprintf(buf, "%d\n", 128*1024);
+    }
+    return sprintf(buf, "unknown\n");
+}
+
+static ssize_t memory_nand_show(struct device *dev,
+                struct device_attribute *attr, char *buf)
+{
+    struct hw_ver version; 
+    attiny_cache_t *cache = ((struct attiny *)dev_get_drvdata(dev))->cache;
+
+    if (!strcompare(cache->name, "LORIX One") && !parse_hw_ver(cache->hw_ver, &version)) {
+        struct hw_ver ver_512MB = { .major = 1, .minor = 0, .revision = 3, .bom = 2};
+        if (hw_ver_compare(&version, &ver_512MB) >= 0) {
+            return sprintf(buf, "%d\n", 512*1024);
+        } else {
+            return sprintf(buf, "%d\n", 256*1024);
+        }
+    }
+    return sprintf(buf, "unknown\n");
+}
+
 static DEVICE_ATTR(dev_version, S_IRUGO, dev_version_show, NULL);
 static DEVICE_ATTR(boot_state, (S_IWUSR|S_IRUSR|S_IWGRP|S_IRGRP|S_IROTH), boot_state_show, boot_state_store);
 static DEVICE_ATTR(fw_version, S_IRUGO, fw_version_show, NULL);
 static DEVICE_ATTR(hw_version, S_IRUGO, hw_version_show, NULL);
 static DEVICE_ATTR(product_name, S_IRUGO, product_name_show, NULL);
 static DEVICE_ATTR(product_type, S_IRUGO, product_type_show, NULL);
+static DEVICE_ATTR(mem_ram, S_IRUGO, memory_ram_show, NULL);
+static DEVICE_ATTR(mem_nand, S_IRUGO, memory_nand_show, NULL);
 static const struct attribute *machine_attrs[] = {
     &dev_attr_dev_version.attr,
     &dev_attr_boot_state.attr,
@@ -379,6 +545,8 @@ static const struct attribute *machine_attrs[] = {
     &dev_attr_hw_version.attr,
     &dev_attr_product_name.attr,
     &dev_attr_product_type.attr,
+    &dev_attr_mem_ram.attr,
+    &dev_attr_mem_nand.attr,
     NULL,
 };
 static const struct attribute_group machine_attr_group = {
@@ -455,7 +623,7 @@ static int pmic_lorix_probe(struct i2c_client *client,
         goto out_remove_mfd;
     }
 
-    // create pmic driver device
+    // create machine hierarchy
     attiny->machine_dev = device_create(product_class, dev, 0, attiny, "machine");
     if (IS_ERR(attiny->machine_dev)) {
         dev_err(dev, "failed to create device '%s_%s'\n", "product", "machine");
