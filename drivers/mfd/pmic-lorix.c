@@ -427,7 +427,7 @@ static int parse_uint(const char *str, size_t len, int *result) {
 
 static int parse_hw_ver(const char * str, struct hw_ver *version) {
     size_t len = strlen(str);
-    size_t i = 0, j;
+    size_t i = 0;
     long res;
     char pointer[20];
     if (len >= sizeof(pointer)) {
