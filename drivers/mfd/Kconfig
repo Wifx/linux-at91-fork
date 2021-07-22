@@ -106,7 +106,7 @@ config PMIC_LORIX_ONE
 	help
 	  Say yes here to add support for reset controller/PMIC integrated
 	  on LORIX One main PCB and based on ATTiny microcontroller.
-	  This includes the I2C driver and the core APIs _only_, you have to
+	  This includes the I2C driver and the core API _only_, you have to
 	  select individual components likes LEDs and reset status under the
 	  corresponding menus.
 

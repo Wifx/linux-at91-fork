@@ -554,7 +554,7 @@ config LEDS_LT3593
 	  coding protocol to set the brightness.
 
 config LEDS_LORIX_ONE
-	tristate "LED support for LORIX One PMIC (Status LED)"
+	tristate "LED support for Wifx LORIX One PMIC (Status LED)"
 	depends on LEDS_CLASS
 	depends on PMIC_LORIX_ONE
 	help
