@@ -1,8 +1,8 @@
 /*
  * LEDs driver for the LORIX One PMIC/Reset controller
  *
- *  Copyright (C) 2016-2020 Wifx,
- *                2016-2020 Yannick Lanz <yannick.lanz@wifx.net>
+ *  Copyright (C) 2016 Wifx,
+ *                2016 Yannick Lanz <yannick.lanz@wifx.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -19,44 +19,43 @@
 #include <linux/of.h>
 #include <linux/mfd/pmic-lorix.h>
 
-#define LORIX_DISP_LED_NAME		"status_led"
+#define LORIX_DISP_LED_NAME "status_led"
 
 struct attiny_led {
-	struct led_classdev	cdev;
-	struct work_struct	work;
-	enum led_brightness	new_brightness;
-	int					id;
-	struct attiny_leds	*leds;
+	struct led_classdev cdev;
+	struct work_struct work;
+	enum led_brightness new_brightness;
+	int id;
+	struct attiny_leds *leds;
 };
 
 struct attiny_leds {
-	struct attiny		*master;
-	int					num_leds;
-	struct attiny_led	*led;
+	struct attiny *master;
+	int num_leds;
+	struct attiny_led *led;
 };
 
 static void attiny_led_set_work(struct work_struct *work)
 {
-	struct attiny_led *led =
-			container_of(work, struct attiny_led, work);
+	struct attiny_led *led = container_of(work, struct attiny_led, work);
 	struct attiny_leds *leds = led->leds;
 
 	pmic_lorix_write(leds->master, 0x01, led->new_brightness);
 }
 
 static void attiny_led_set(struct led_classdev *led_cdev,
-				enum led_brightness value)
+			   enum led_brightness value)
 {
 	struct attiny_led *led =
-			container_of(led_cdev, struct attiny_led, cdev);
+		container_of(led_cdev, struct attiny_led, cdev);
 
 	led->new_brightness = value;
 	schedule_work(&led->work);
 }
 
 #ifdef CONFIG_OF
-static struct attiny_leds_platform_data __init *attiny_led_probe_dt(
-	struct platform_device *pdev)
+static struct attiny_leds_platform_data __init *
+attiny_led_probe_dt(struct platform_device *pdev)
 {
 	struct attiny_leds_platform_data *pdata;
 	struct device_node *parent, *child;
@@ -72,8 +71,7 @@ static struct attiny_leds_platform_data __init *attiny_led_probe_dt(
 		goto out_node_put;
 
 	ret = of_property_read_u32_array(parent, "led-control",
-					 pdata->led_control,
-					 1);
+					 pdata->led_control, 1);
 	if (ret)
 		goto out_node_put;
 
@@ -86,7 +84,7 @@ static struct attiny_leds_platform_data __init *attiny_led_probe_dt(
 		goto out_node_put;
 	}
 
-	for_each_child_of_node(parent, child) {
+	for_each_child_of_node (parent, child) {
 		const char *str;
 		u32 tmp;
 
@@ -112,8 +110,8 @@ out_node_put:
 	return ret ? ERR_PTR(ret) : pdata;
 }
 #else
-static inline struct attiny_leds_platform_data __init *attiny_led_probe_dt(
-	struct platform_device *pdev)
+static inline struct attiny_leds_platform_data __init *
+attiny_led_probe_dt(struct platform_device *pdev)
 {
 	return ERR_PTR(-ENOSYS);
 }
@@ -129,13 +127,13 @@ static int __init attiny_led_probe(struct platform_device *pdev)
 	u32 init_led = 0;
 
 	leds = devm_kzalloc(dev, sizeof(*leds), GFP_KERNEL);
-	if(!leds)
+	if (!leds)
 		return -ENOMEM;
 
 	leds->master = atdev;
 	platform_set_drvdata(pdev, leds);
 
-	if(dev->parent->of_node) {
+	if (dev->parent->of_node) {
 		pdata = attiny_led_probe_dt(pdev);
 		if (IS_ERR(pdata))
 			return PTR_ERR(pdata);
@@ -183,8 +181,10 @@ static int __init attiny_led_probe(struct platform_device *pdev)
 		if (ret) {
 			dev_err(dev, "Failed to register LED %i\n", id);
 			break;
-		}else{
-			dev_info(dev, "registred led (name = %s, trigger = %s)\n", name, trig);
+		} else {
+			dev_info(dev,
+				 "registred led (name = %s, trigger = %s)\n",
+				 name, trig);
 		}
 	}
 
@@ -212,7 +212,9 @@ static int attiny_led_remove(struct platform_device *pdev)
 
 #ifdef CONFIG_OF
 static const struct of_device_id pmic_lorix_led_of_match[] = {
-	{ .compatible = "wifx,pmic-lorix-led", },
+	{
+		.compatible = "wifx,pmic-lorix-led",
+	},
 	{},
 };
 MODULE_DEVICE_TABLE(of, pmic_lorix_led_of_match);
