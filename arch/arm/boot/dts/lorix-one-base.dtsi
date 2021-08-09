@@ -58,6 +58,12 @@
 		stdout-path = "serial0:115200n8";
 	};
 
+	aliases {
+		rtc0 = &rtc_internal;
+		serial1 = &usart1;
+		eth0 = &macb0;
+	};
+
 	memory {
 		reg = <0x20000000 0x08000000>;
 	};
@@ -158,6 +164,10 @@
 			};
 
 			watchdog@fc068640 {
+				status = "okay";
+			};
+
+			rtc_internal:rtc@fc0686b0 {
 				status = "okay";
 			};
 

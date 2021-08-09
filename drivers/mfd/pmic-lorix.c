@@ -19,6 +19,7 @@
 #include <linux/err.h>
 #include <linux/i2c.h>
 #include <linux/of.h>
+#include <linux/netdevice.h>
 
 #include <linux/leds.h>
 
@@ -77,6 +78,7 @@ typedef struct {
 	char hw_ver[16];
 	char name[16];
 	char type[16];
+	char serial[20];
 } attiny_cache_t;
 
 static int __lorix_read(struct i2c_client *client, int reg, uint8_t *val)
@@ -325,7 +327,7 @@ static int reg_feature2_get(struct attiny *attiny, reg_feature2_t *reg_feature2)
 static ssize_t dev_version_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%s\n", "1.1.0");
+	return sprintf(buf, "%s\n", "1.2.0");
 }
 
 static ssize_t boot_state_show(struct device *dev,
@@ -378,6 +380,13 @@ static ssize_t product_type_show(struct device *dev,
 {
 	attiny_cache_t *cache = ((struct attiny *)dev_get_drvdata(dev))->cache;
 	return sprintf(buf, "%s\n", cache->type);
+}
+
+static ssize_t serial_show(struct device *dev, struct device_attribute *attr,
+			   char *buf)
+{
+	attiny_cache_t *cache = ((struct attiny *)dev_get_drvdata(dev))->cache;
+	return sprintf(buf, "%s\n", cache->serial);
 }
 
 static int strcompare(const char *str1, const char *str2)
@@ -562,18 +571,15 @@ static DEVICE_ATTR(fw_version, S_IRUGO, fw_version_show, NULL);
 static DEVICE_ATTR(hw_version, S_IRUGO, hw_version_show, NULL);
 static DEVICE_ATTR(product_name, S_IRUGO, product_name_show, NULL);
 static DEVICE_ATTR(product_type, S_IRUGO, product_type_show, NULL);
+static DEVICE_ATTR(serial, S_IRUGO, serial_show, NULL);
 static DEVICE_ATTR(mem_ram, S_IRUGO, memory_ram_show, NULL);
 static DEVICE_ATTR(mem_nand, S_IRUGO, memory_nand_show, NULL);
 static const struct attribute *machine_attrs[] = {
-	&dev_attr_dev_version.attr,
-	&dev_attr_boot_state.attr,
-	&dev_attr_fw_version.attr,
-	&dev_attr_hw_version.attr,
-	&dev_attr_product_name.attr,
-	&dev_attr_product_type.attr,
-	&dev_attr_mem_ram.attr,
-	&dev_attr_mem_nand.attr,
-	NULL,
+	&dev_attr_dev_version.attr,  &dev_attr_serial.attr,
+	&dev_attr_boot_state.attr,   &dev_attr_fw_version.attr,
+	&dev_attr_hw_version.attr,   &dev_attr_product_name.attr,
+	&dev_attr_product_type.attr, &dev_attr_mem_ram.attr,
+	&dev_attr_mem_nand.attr,     NULL,
 };
 static const struct attribute_group machine_attr_group = {
 	.attrs = (struct attribute **)machine_attrs,
@@ -587,8 +593,10 @@ static int pmic_lorix_probe(struct i2c_client *client,
 	struct attiny *attiny;
 	attiny_cache_t *cache;
 	struct device *dev = &client->dev;
-	int ret;
 	uint8_t boot_state;
+	int ret;
+	struct net_device *netif_dev;
+	bool eth0_found = false;
 
 	/* Right now device-tree probed devices don't get dma_mask set.
 	 * Since shared usb code relies on it, set it here for now.
@@ -731,11 +739,36 @@ static int pmic_lorix_probe(struct i2c_client *client,
 		}
 	}
 
+	/* manage the serial which is based on eth0 MAC address */
+	read_lock(&dev_base_lock);
+	for_each_netdev (&init_net, netif_dev) {
+		if (!strcmp(netif_dev->name, "eth0")) {
+			eth0_found = true;
+
+			sprintf(cache->serial, "%02x%02x%02xfffe%02x%02x%02x",
+				netif_dev->dev_addr[0], netif_dev->dev_addr[1],
+				netif_dev->dev_addr[2], netif_dev->dev_addr[3],
+				netif_dev->dev_addr[4], netif_dev->dev_addr[5]);
+		}
+	}
+	read_unlock(&dev_base_lock);
+
+	if (!eth0_found) {
+		dev_err(dev,
+			"eth0 interface not found, can't derive serial number from MAC address\n");
+		sprintf(cache->serial, "error");
+	}
+
 	// display machine info
 	dev_info(dev, "Product %s detected\n", cache->name);
 	dev_info(dev, "   Type: %s\n", cache->type);
 	dev_info(dev, " HW ver: %s\n", cache->hw_ver);
 	dev_info(dev, " FW ver: %s\n", cache->fw_ver);
+	if (eth0_found) {
+		dev_info(dev, " Serial: %s\n", cache->serial);
+	} else {
+		dev_err(dev, " Serial: error\n");
+	}
 
 	switch (boot_state) {
 	case 0x00:
