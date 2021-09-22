@@ -151,10 +151,19 @@
 				status = "okay";
 			};
 
-			/* disable unused TCB */
 			tcb0: timer@f801c000 {
-				status = "disabled";
+				timer0: timer@0 {
+					compatible = "atmel,tcb-timer";
+					reg = <0>;
+				};
+
+				timer1: timer@1 {
+					compatible = "atmel,tcb-timer";
+					reg = <1>;
+				};
 			};
+
+			/* disable unused TCB */
 			tcb1: timer@fc020000 {
 				status = "disabled";
 			};
