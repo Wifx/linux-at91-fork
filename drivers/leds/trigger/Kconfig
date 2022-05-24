@@ -144,4 +144,11 @@ config LEDS_TRIGGER_AUDIO
 	  the audio mute and mic-mute changes.
 	  If unsure, say N
 
+config LEDS_TRIGGER_WGW_USBC
+	tristate "USB Type-C data mode trigger for the Wifx board EC LED"
+	depends on MFD_WGW_EC_USBC && OF
+	help
+	  This allows Wifx board EC LEDs to be controlled by the data mode 
+	  (device, host) of USB Type-C connector managed by the EC.
+
 endif # LEDS_TRIGGERS

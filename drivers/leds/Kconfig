@@ -565,6 +565,16 @@ config LEDS_LORIX_ONE
 	  To compile this driver as a module, choose M here: the module will
 	  be called leds-pmic-lorix.
 
+config LEDS_WGW_EC
+	tristate "Wifx board EC LED management"
+	depends on LEDS_CLASS && MFD_WGW_EC_DEV && OF
+	help
+	  This option enables support for on-chip LED driver managed
+	  by the Embedded Controller of the Wifx gateway board.
+
+	  To compile this driver as a module, choose M here: the module will
+	  be called leds-wgw-ec.
+
 config LEDS_ADP5520
 	tristate "LED Support for ADP5520/ADP5501 PMIC"
 	depends on LEDS_CLASS
