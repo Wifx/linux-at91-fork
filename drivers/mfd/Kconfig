@@ -110,6 +110,69 @@ config PMIC_LORIX_ONE
 	  select individual components likes LEDs and reset status under the
 	  corresponding menus.
 
+config WGW_EC
+	tristate "Wifx board Embedded Controller"
+	help
+	  If you say Y here you get support for the Wifx board Embedded
+	  Controller (EC) providing USB Type-C, LED and memory.
+	  You also need to enable the driver for the bus you are using. The
+	  protocol for talking to the EC is defined by the bus driver.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called wgw_ec.
+
+config MFD_WGW_EC_DEV
+	tristate "Wifx board EC multifunction device"
+	select MFD_CORE
+	depends on WGW_EC && OF
+	help
+	  Select this to get support for Wifx board Embedded Controller and
+	  sub-devices. This driver will instantiate additional drivers such as
+	  USB Type-C, etc but you have to select the individual drivers.
+
+	  To compile this driver as a module, choose M here: the module will be
+	  called wgw-ec-dev.
+
+config MFD_WGW_EC_I2C
+	tristate "Wifx board EC support with I2C"
+	depends on WGW_EC && I2C && OF
+	help
+	  If you say Y here, you get support for talking to the Wifx board
+	  EC through an I2C bus. This uses a SMBus similar protocol including
+	  a checksum.
+
+config MFD_WGW_EC_USBC
+	tristate "USB Type-C management through Wifx board EC"
+	depends on MFD_WGW_EC_DEV && TYPEC
+	help
+	  This option enables support for the on-chip USB Type-C driver managed
+	  by the Embedded Controller on Wifx board.
+
+	  To compile this driver as a module, choose M here: the module will
+	  be called wgw-ec-usbc.
+
+config MFD_WGW_EC_CHARDEV
+	tristate "Wifx board EC miscdevice chardev"
+	depends on MFD_WGW_EC_DEV
+	default MFD_WGW_EC_DEV
+	help
+	  This driver adds file operations support to talk with the
+	  Wifx board EC from userspace via a character device.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called wgw-ec-chardev.
+
+config MFD_WGW_EC_SYSFS
+	tristate "Wifx board EC control and information through sysfs"
+	depends on MFD_WGW_EC_DEV && SYSFS
+	default MFD_WGW_EC_DEV
+	help
+	  This option exposes some sysfs attributes to control and get
+	  information from Wifx board EC.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called wgw-ec-sysfs.
+
 config MFD_AAT2870_CORE
 	bool "AnalogicTech AAT2870"
 	select MFD_CORE

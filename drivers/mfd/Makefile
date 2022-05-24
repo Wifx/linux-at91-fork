@@ -184,6 +184,14 @@ obj-$(CONFIG_AB8500_CORE)	+= ab8500-core.o ab8500-sysctrl.o
 obj-$(CONFIG_MFD_TIMBERDALE)    += timberdale.o
 obj-$(CONFIG_PMIC_ADP5520)	+= adp5520.o
 obj-$(CONFIG_PMIC_LORIX_ONE)	+= pmic-lorix.o
+
+obj-$(CONFIG_WGW_EC)		+= wgw_ec.o
+obj-$(CONFIG_MFD_WGW_EC_DEV)	+= wgw_ec_dev.o
+obj-$(CONFIG_MFD_WGW_EC_I2C)	+= wgw_ec_i2c.o
+obj-$(CONFIG_MFD_WGW_EC_USBC)	+= wgw_ec_usbc.o
+obj-$(CONFIG_MFD_WGW_EC_CHARDEV)+= wgw_ec_chardev.o
+obj-$(CONFIG_MFD_WGW_EC_SYSFS)	+= wgw_ec_sysfs.o
+
 obj-$(CONFIG_MFD_KEMPLD)	+= kempld-core.o
 obj-$(CONFIG_MFD_INTEL_QUARK_I2C_GPIO)	+= intel_quark_i2c_gpio.o
 obj-$(CONFIG_LPC_SCH)		+= lpc_sch.o
