@@ -40,6 +40,7 @@
 		i2c0 = &i2c0;
 		i2c1 = &i2c1;
 		i2c2 = &i2c2;
+		i2c3 = &i2c3;
 	};
 	cpus {
 		#address-cells = <1>;
@@ -435,10 +436,10 @@
 				compatible = "atmel,sama5d4-i2c";
 				reg = <0xfc038000 0x4000>;
 				interrupts = <62 IRQ_TYPE_LEVEL_HIGH 6>;
-				dmas = <&dma1
+				dmas = <&dma0
 					(AT91_XDMAC_DT_MEM_IF(0) | AT91_XDMAC_DT_PER_IF(1)
 					| AT91_XDMAC_DT_PERID(8))>,
-				       <&dma1
+				       <&dma0
 					(AT91_XDMAC_DT_MEM_IF(0) | AT91_XDMAC_DT_PER_IF(1)
 					| AT91_XDMAC_DT_PERID(9))>;
 				dma-names = "tx", "rx";
