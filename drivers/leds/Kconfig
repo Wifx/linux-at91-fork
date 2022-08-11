@@ -554,6 +554,17 @@ config LEDS_LT3593
 	  LT3593 controller. This controller uses a special one-wire pulse
 	  coding protocol to set the brightness.
 
+config LEDS_LORIX_ONE
+	tristate "LED support for Wifx LORIX One PMIC (Status LED)"
+	depends on LEDS_CLASS
+	depends on PMIC_LORIX_ONE
+	help
+	  This option enables support for on-chip LED drivers managed
+	  by the integrated custom PMIC.
+
+	  To compile this driver as a module, choose M here: the module will
+	  be called leds-pmic-lorix.
+
 config LEDS_ADP5520
 	tristate "LED Support for ADP5520/ADP5501 PMIC"
 	depends on LEDS_CLASS

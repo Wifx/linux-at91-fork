@@ -324,6 +324,7 @@ struct usba_udc {
 	const struct usba_udc_caps *caps;
 	int irq;
 	struct gpio_desc *vbus_pin;
+	int id_pin;
 	int num_ep;
 	struct usba_fifo_cfg *fifo_cfg;
 	struct clk *pclk;

@@ -99,6 +99,17 @@ config PMIC_ADP5520
 	  individual components like LCD backlight, LEDs, GPIOs and Kepad
 	  under the corresponding menus.
 
+config PMIC_LORIX_ONE
+	tristate "LORIX One PMIC Core Support"
+	select MFD_CORE
+	depends on I2C=y
+	help
+	  Say yes here to add support for reset controller/PMIC integrated
+	  on LORIX One main PCB and based on ATTiny microcontroller.
+	  This includes the I2C driver and the core API _only_, you have to
+	  select individual components likes LEDs and reset status under the
+	  corresponding menus.
+
 config MFD_AAT2870_CORE
 	bool "AnalogicTech AAT2870"
 	select MFD_CORE
