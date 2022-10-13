@@ -102,12 +102,14 @@
 					compatible = "lm75";
 					reg = <0x4d>;
 					status = "okay";
+					vs-supply = <&vcc_3v3_reg>;
 				};
 
 				i2c_eeprom: i2c_eeprom@58 {
 					compatible = "atmel,24mac402";
 					reg = <0x58>;
 					status = "okay";
+					vcc-supply = <&vcc_3v3_reg>;
 				};
 			};
 
@@ -277,7 +279,7 @@
 		};
 	};
 
-    vcc_3v3_reg: fixedregulator_3v3 {
+	vcc_3v3_reg: fixedregulator_3v3 {
 		compatible = "regulator-fixed";
 		regulator-name = "VCC 3V3";
 		regulator-min-microvolt = <3300000>;

@@ -111,12 +111,14 @@
 					reg = <0x54>;
 					pagesize = <16>;
 					status = "okay";
+					vcc-supply = <&vcc_3v3_reg>;
 				};
 
 				at24mac402: mac_eeprom@58 {
 					compatible = "atmel,24mac402";
 					reg = <0x58>;
 					status = "okay";
+					vcc-supply = <&vcc_3v3_reg>;
 				};
 
 				ds1339: rtc@68 {
@@ -382,6 +384,15 @@
 			gpios = <&pioE 15 GPIO_ACTIVE_HIGH>;
 			linux,default-trigger = "heartbeat";
 		};
+	};
+
+	vcc_3v3_reg: fixedregulator_3v3 {
+		compatible = "regulator-fixed";
+		regulator-name = "VCC 3V3";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-boot-on;
+		regulator-always-on;
 	};
 
 	vddbu_2v_reg: fixedregulator@0 {
