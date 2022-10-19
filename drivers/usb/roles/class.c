@@ -27,7 +27,8 @@ struct usb_role_switch {
 	struct device *udc;
 	usb_role_switch_set_t set;
 	usb_role_switch_get_t get;
-	bool allow_userspace_control;
+	bool userspace_enable;
+	bool userspace_allow_write;
 };
 
 #define to_role_switch(d)	container_of(d, struct usb_role_switch, dev)
@@ -202,7 +203,7 @@ usb_role_switch_is_visible(struct kobject *kobj, struct attribute *attr, int n)
 	struct device *dev = kobj_to_dev(kobj);
 	struct usb_role_switch *sw = to_role_switch(dev);
 
-	if (sw->allow_userspace_control)
+	if (sw->userspace_enable)
 		return attr->mode;
 
 	return 0;
@@ -327,12 +328,18 @@ usb_role_switch_register(struct device *parent,
 
 	mutex_init(&sw->lock);
 
-	sw->allow_userspace_control = desc->allow_userspace_control;
+	sw->userspace_enable = desc->userspace_enable;
+	sw->userspace_allow_write = desc->userspace_allow_write;
 	sw->usb2_port = desc->usb2_port;
 	sw->usb3_port = desc->usb3_port;
 	sw->udc = desc->udc;
 	sw->set = desc->set;
 	sw->get = desc->get;
+
+	if (!sw->userspace_allow_write) {
+		dev_attr_role.attr.mode &= ~0x200;
+		dev_attr_role.store = NULL;
+	}
 
 	sw->dev.parent = parent;
 	sw->dev.fwnode = desc->fwnode;

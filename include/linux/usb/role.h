@@ -42,7 +42,8 @@ struct usb_role_switch_desc {
 	struct device *udc;
 	usb_role_switch_set_t set;
 	usb_role_switch_get_t get;
-	bool allow_userspace_control;
+	bool userspace_enable;
+	bool userspace_allow_write;
 	void *driver_data;
 	const char *name;
 };
