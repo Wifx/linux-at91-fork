@@ -151,6 +151,19 @@
 						compatible = "wifx,wgw-ec-usbc";
 						#trigger-source-cells = <0>;
 						status = "okay";
+
+						port {
+							typec0_dr_sw: endpoint {
+								remote-endpoint = <&usb0_drd_sw>;
+							};
+						};
+
+						connector {
+							compatible = "usb-c-connector";
+							power-role = "dual";
+							data-role = "dual";
+							status = "okay";
+						};
 					};
 
 					leds {
@@ -298,27 +311,24 @@
 		};
 
 		usb0: gadget@400000 {
-			atmel,vbus-gpio = <&pioE 31 GPIO_ACTIVE_HIGH>;
-			atmel,id-gpio = <&pioD 11 GPIO_ACTIVE_HIGH>;
-			pinctrl-names = "default";
-			pinctrl-0 = <&pinctrl_usb_vbus>;
+			dr_mode = "otg";
+			hnp-disable;
+			srp-disable;
+			adp-disable;
+			usb-role-switch;
 			status = "okay";
+
+			port {
+				usb0_drd_sw: endpoint {
+					remote-endpoint = <&typec0_dr_sw>;
+				};
+			};
 		};
 
 		usb1: ohci@500000 {
 			num-ports = <3>;
-			atmel,vbus-gpio = <
-				0
-				0
-				0
-			>;
-			atmel,id-gpio = <
-				&pioD 11 GPIO_ACTIVE_HIGH
-				0
-				0
-			>;
-			pinctrl-names = "default";
-			pinctrl-0 = <&pinctrl_usb_id>;
+			atmel,vbus-gpio = <0 0 0>;
+			atmel,id-gpio = <0 0 0>;
 			status = "okay";
 		};
 

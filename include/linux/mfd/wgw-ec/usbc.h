@@ -19,6 +19,7 @@
 
 #include <linux/of.h>
 #include <linux/notifier.h>
+#include <linux/usb/role.h>
 #include <linux/usb/typec.h>
 
 #include <linux/mfd/wgw-ec/core.h>
@@ -40,26 +41,36 @@ struct wgw_ec_usbc_dev {
 	struct device *dev;
 	struct wgw_ec_dev *ec;
 
-	spinlock_t lock;
-
+	// notification from wgw-ec-dev
 	struct notifier_block notifier;
-	struct blocking_notifier_head notifier_list;
 
-	enum usb_data_mode data_mode;
-	enum usb_power_mode power_mode;
+	// keep track of all wgw-ec-usbc-dev
+	struct list_head list_node;
 
 	struct typec_port *port;
 	struct typec_partner *partner;
 	struct typec_capability typec_cap;
+	struct usb_role_switch *role_sw;
+
+	// cache
+	spinlock_t lock;
+	enum usb_data_mode data_mode;
+	enum usb_power_mode power_mode;
 };
 
-/* Events from the usb core */
-#define WGW_USBC_DATA_MODE_CHANGE 0x0001
-#define WGW_USBC_POWER_MODE_CHANGE 0x0002
+/* Events and notification from the usb core */
+#define WGW_USBC_DEVICE_PROBE		0x0001
+#define WGW_USBC_NOTIFIER_UPDATE	0x0002
+#define WGW_USBC_DATA_MODE_CHANGE	0x0003
+#define WGW_USBC_POWER_MODE_CHANGE	0x0004
 
-extern enum usb_data_mode
-wgw_ec_usbc_get_data_mode(struct wgw_ec_usbc_dev *usbc);
-extern enum usb_power_mode
-wgw_ec_usbc_get_power_mode(struct wgw_ec_usbc_dev *usbc);
+struct wgw_ec_usbc_notification {
+	struct device *dev;
+	enum usb_power_mode power_mode;
+	enum usb_data_mode data_mode;
+};
 
-#endif /* __LINUX_MFD_WGW_EC_LED_H */
+int wgw_ec_usbc_register_notifier(struct notifier_block *nb);
+int wgw_ec_usbc_unregister_notifier(struct notifier_block *nb);
+
+#endif /* __LINUX_MFD_WGW_EC_USBC_H */

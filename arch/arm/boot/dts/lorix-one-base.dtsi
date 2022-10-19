@@ -211,25 +211,32 @@
 		};
 
 		usb0: gadget@400000 {
-			atmel,vbus-gpio = <&pioE 31 GPIO_ACTIVE_HIGH>;
-			atmel,id-gpio = <&pioD 11 GPIO_ACTIVE_HIGH>;
-			pinctrl-names = "default";
-			pinctrl-0 = <&pinctrl_usba_vbus>;
+			dr_mode = "otg";
+			hnp-disable;
+			srp-disable;
+			adp-disable;
+			usb-role-switch;
 			status = "okay";
+
+			connector {
+				compatible = "gpio-usb-b-connector", "usb-b-connector";
+				label = "USB mini-AB";
+				type = "mini";
+				status = "okay";
+
+				id-gpios = <&pioD 11 GPIO_ACTIVE_HIGH>;
+				vbus-gpios = <&pioE 31 GPIO_ACTIVE_HIGH>;
+				vbus-supply = <&vbus_usb_reg>;
+
+				pinctrl-names = "default";
+				pinctrl-0 = <&pinctrl_usba_vbus &pinctrl_usb_id>;
+			};
 		};
 
 		usb1: ohci@500000 {
 			num-ports = <3>;
-			atmel,vbus-gpio = <&pioD 12 GPIO_ACTIVE_HIGH
-				0
-				0
-			>;
-			atmel,id-gpio = <&pioD 11 GPIO_ACTIVE_HIGH
-				0
-				0
-			>;
-			pinctrl-names = "default";
-			pinctrl-0 = <&pinctrl_usb_id>;
+			atmel,vbus-gpio = <0 0 0>;
+			atmel,id-gpio = <0 0 0>;
 			status = "okay";
 		};
 
@@ -295,5 +302,15 @@
 		regulator-max-microvolt = <2000000>;
 		regulator-boot-on;
 		regulator-always-on;
+	};
+
+	vbus_usb_reg: fixedregulator_vbus_usb {
+		compatible = "regulator-fixed";
+		regulator-name = "VBUS USB";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		regulator-boot-on;
+		enable-active-high;
+		gpio = <&pioD 12 GPIO_ACTIVE_HIGH>;
 	};
 };

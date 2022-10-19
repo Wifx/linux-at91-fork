@@ -144,6 +144,7 @@ config MFD_WGW_EC_I2C
 config MFD_WGW_EC_USBC
 	tristate "USB Type-C management through Wifx board EC"
 	depends on MFD_WGW_EC_DEV && TYPEC
+	select USB_ROLE_SWITCH
 	help
 	  This option enables support for the on-chip USB Type-C driver managed
 	  by the Embedded Controller on Wifx board.

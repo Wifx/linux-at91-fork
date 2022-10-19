@@ -20,6 +20,7 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
+#include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
 #include <linux/slab.h>
@@ -478,24 +479,6 @@ static inline void usba_int_enb_clear(struct usba_udc *udc, u32 mask)
 	val = udc->int_enb_cache & ~mask;
 	usba_writel(udc, INT_ENB, val);
 	udc->int_enb_cache = val;
-}
-
-static int vbus_is_present(struct usba_udc *udc)
-{
-	if (udc->vbus_pin)
-		return gpiod_get_value(udc->vbus_pin);
-
-	/* No Vbus detection: Assume always present */
-	return 1;
-}
-
-static int id_is_device(struct usba_udc *udc)
-{
-	if (gpio_is_valid(udc->id_pin))
-		return gpio_get_value(udc->id_pin);
-
-	/* No ID detection: Assume always device */
-	return 1;
 }
 
 static void toggle_bias(struct usba_udc *udc, int is_on)
@@ -1928,14 +1911,6 @@ static irqreturn_t usba_udc_irq(int irq, void *devid)
 		usba_int_enb_set(udc, USBA_BF(EPT_INT, 1) | USBA_DET_SUSPEND |
 					      USBA_END_OF_RESUME);
 
-		/*
-		 * Unclear why we hit this irregularly, e.g. in usbtest,
-		 * but it's clearly harmless...
-		 */
-		if (!(usba_ep_readl(ep0, CFG) & USBA_EPT_MAPPED))
-			dev_err(&udc->pdev->dev,
-				"ODD: EP0 configuration is invalid!\n");
-
 		/* Preallocate other endpoints */
 		for (i = 1; i < udc->num_ep; i++) {
 			ep = &udc->usba_ep[i];
@@ -1998,6 +1973,9 @@ static int usba_start(struct usba_udc *udc)
 	unsigned long flags;
 	int ret;
 
+	if (udc->started)
+		return 0;
+
 	ret = start_clock(udc);
 	if (ret)
 		return ret;
@@ -2006,20 +1984,20 @@ static int usba_start(struct usba_udc *udc)
 		return 0;
 
 	spin_lock_irqsave(&udc->lock, flags);
-	dev_dbg(&udc->pdev->dev, "Enable bias\n");
 	toggle_bias(udc, 1);
-	dev_dbg(&udc->pdev->dev, "Switch to device\n");
+	dev_dbg(&udc->pdev->dev, "Enable device mode\n");
 	usba_writel(udc, CTRL, USBA_ENABLE_MASK);
 	/* Clear all requested and pending interrupts... */
 	usba_writel(udc, INT_ENB, 0);
 	udc->int_enb_cache = 0;
 	usba_writel(udc, INT_CLR,
-		    USBA_END_OF_RESET | USBA_END_OF_RESUME | USBA_DET_SUSPEND |
-			    USBA_WAKE_UP);
+		USBA_END_OF_RESET|USBA_END_OF_RESUME
+		|USBA_DET_SUSPEND|USBA_WAKE_UP);
 	/* ...and enable just 'reset' IRQ to get us started */
 	usba_int_enb_set(udc, USBA_END_OF_RESET);
 	spin_unlock_irqrestore(&udc->lock, flags);
 
+	udc->started = true;
 	return 0;
 }
 
@@ -2035,48 +2013,49 @@ static void usba_stop(struct usba_udc *udc)
 	reset_all_endpoints(udc);
 
 	/* This will also disable the DP pullup */
-	dev_dbg(&udc->pdev->dev, "Disable bias\n");
 	toggle_bias(udc, 0);
-	dev_dbg(&udc->pdev->dev, "Switch to host\n");
 	usba_writel(udc, CTRL, USBA_DISABLE_MASK);
 	spin_unlock_irqrestore(&udc->lock, flags);
 
 	stop_clock(udc);
+	udc->started = false;
+
+	dev_dbg(&udc->pdev->dev, "Disable device mode\n");
 }
 
-static irqreturn_t usba_vbus_irq_thread(int irq, void *devid)
+static int atmel_udc_usb_apply_role(struct device *dev)
 {
-	struct usba_udc *udc = devid;
-	int vbus;
+	int ret = 0;
+	struct usba_udc *udc = dev_get_drvdata(dev);
+	unsigned long flags;
 
-	/* debounce */
-	udelay(10);
+	if (udc->role != udc->pending_role) {
+		dev_dbg(dev, "Apply pending role (%d -> %d)\n", udc->role,
+			udc->pending_role);
 
-	mutex_lock(&udc->vbus_mutex);
-
-	vbus = vbus_is_present(udc);
-	dev_dbg(&udc->pdev->dev, "VBUS irq: %s\n",
-		vbus ? "power on" : "power off");
-	/* test level of ID pin */
-	dev_dbg(&udc->pdev->dev, "ID value: %s\n",
-		id_is_device(udc) ? "device" : "host");
-	if (vbus != udc->vbus_prev) {
-		if (vbus && id_is_device(udc)) {
-			phy_set_mode_ext(udc->phy, PHY_MODE_USB_DEVICE, 1);
-			usba_start(udc);
-		} else {
+		/* we leave device mode here */
+		if (udc->role == USB_ROLE_DEVICE) {
 			udc->suspended = false;
-			if (udc->driver->disconnect)
+			spin_lock_irqsave(&udc->lock, flags);
+			if (udc->driver && udc->driver->disconnect) {
+				dev_dbg(dev, "Execute gadget disconnect\n");
 				udc->driver->disconnect(&udc->gadget);
+			}
+			spin_unlock_irqrestore(&udc->lock, flags);
 
 			usba_stop(udc);
 			phy_set_mode_ext(udc->phy, PHY_MODE_USB_DEVICE, 0);
 		}
-		udc->vbus_prev = vbus;
+		udc->role = udc->pending_role;
 	}
 
-	mutex_unlock(&udc->vbus_mutex);
-	return IRQ_HANDLED;
+	/* in case we enter device mode even if it was pending */
+	if (udc->binded && udc->role == USB_ROLE_DEVICE) {
+		phy_set_mode_ext(udc->phy, PHY_MODE_USB_DEVICE, 1);
+		usba_start(udc);
+	}
+
+	return ret;
 }
 
 static int atmel_usba_pullup(struct usb_gadget *gadget, int is_on)
@@ -2102,48 +2081,28 @@ static int atmel_usba_start(struct usb_gadget *gadget,
 {
 	int ret;
 	struct usba_udc *udc = container_of(gadget, struct usba_udc, gadget);
+	struct device *dev = &udc->pdev->dev;
 	unsigned long flags;
-	int id;
+
+	dev_dbg(dev, "atmel_usba_start\n");
 
 	spin_lock_irqsave(&udc->lock, flags);
 	udc->devstatus = 1 << USB_DEVICE_SELF_POWERED;
 	udc->driver = driver;
 	spin_unlock_irqrestore(&udc->lock, flags);
 
-	mutex_lock(&udc->vbus_mutex);
+	mutex_lock(&udc->role_sw_lock);
+	udc->binded = true;
+	ret = atmel_udc_usb_apply_role(dev);
+	if (ret < 0)
+		goto err;
 
-	if (udc->vbus_pin)
-		enable_irq(gpiod_to_irq(udc->vbus_pin));
-
-	/* If Vbus is present, enable the controller and wait for reset */
-	udc->vbus_prev = vbus_is_present(udc);
-
-	/* Check ID pin status */
-	if (gpio_is_valid(udc->id_pin)) {
-		id = id_is_device(udc);
-		dev_dbg(&udc->pdev->dev, "ID value: %s\n",
-			id ? "device" : "host");
-	} else {
-		/* ID pin not valid, assuming device */
-		id = 1;
-	}
-
-	/* Only activate device mode if VBUS is present and ID is device */
-	if (udc->vbus_prev && id) {
-		phy_set_mode_ext(udc->phy, PHY_MODE_USB_DEVICE, 1);
-		ret = usba_start(udc);
-		if (ret)
-			goto err;
-	}
-
-	mutex_unlock(&udc->vbus_mutex);
+	mutex_unlock(&udc->role_sw_lock);
 	return 0;
 
 err:
-	if (udc->vbus_pin)
-		disable_irq(gpiod_to_irq(udc->vbus_pin));
-
-	mutex_unlock(&udc->vbus_mutex);
+	udc->binded = false;
+	mutex_unlock(&udc->role_sw_lock);
 
 	spin_lock_irqsave(&udc->lock, flags);
 	udc->devstatus &= ~(1 << USB_DEVICE_SELF_POWERED);
@@ -2156,8 +2115,9 @@ static int atmel_usba_stop(struct usb_gadget *gadget)
 {
 	struct usba_udc *udc = container_of(gadget, struct usba_udc, gadget);
 
-	if (udc->vbus_pin)
-		disable_irq(gpiod_to_irq(udc->vbus_pin));
+	mutex_lock(&udc->role_sw_lock);
+	udc->binded = false;
+	mutex_unlock(&udc->role_sw_lock);
 
 	udc->suspended = false;
 	usba_stop(udc);
@@ -2289,7 +2249,6 @@ static const struct of_device_id atmel_pmc_dt_ids[] = {
 static struct usba_ep *atmel_udc_of_init(struct platform_device *pdev,
 					 struct usba_udc *udc)
 {
-	enum of_gpio_flags flags;
 	struct device_node *np = pdev->dev.of_node;
 	const struct of_device_id *match;
 	struct device_node *pp;
@@ -2319,22 +2278,6 @@ static struct usba_ep *atmel_udc_of_init(struct platform_device *pdev,
 	udc->phy = devm_phy_optional_get(&pdev->dev, "usb");
 
 	udc->num_ep = 0;
-
-	udc->vbus_pin =
-		devm_gpiod_get_optional(&pdev->dev, "atmel,vbus", GPIOD_IN);
-	if (IS_ERR(udc->vbus_pin)) {
-		ret = PTR_ERR(udc->vbus_pin);
-		dev_err(&pdev->dev, "unable to claim gpio \"vbus\": %d\n", ret);
-	}
-
-	udc->id_pin = of_get_named_gpio_flags(np, "atmel,id-gpio", 0, &flags);
-
-	if (gpio_is_valid(udc->id_pin)) {
-		dev_dbg(&udc->pdev->dev, "id pin: %s\n",
-			id_is_device(udc) ? "device" : "host");
-	} else {
-		dev_dbg(&udc->pdev->dev, "id pin not given or invalid\n");
-	}
 
 	if (fifo_mode == 0) {
 		udc->num_ep = udc_config->num_ep;
@@ -2440,63 +2383,101 @@ err:
 	return ERR_PTR(ret);
 }
 
+static int atmel_udc_usb_set_role(struct usb_role_switch *sw,
+				  enum usb_role role)
+{
+	struct usba_udc *udc = usb_role_switch_get_drvdata(sw);
+	struct device *dev = &udc->pdev->dev;
+	int ret;
+
+	mutex_lock(&udc->role_sw_lock);
+	if (role != udc->pending_role) {
+		dev_dbg(dev,
+			"Request to change role, set pending to new role (%d)\n",
+			role);
+		udc->pending_role = role;
+	}
+	ret = atmel_udc_usb_apply_role(dev);
+	mutex_unlock(&udc->role_sw_lock);
+
+	return ret;
+}
+
+static enum usb_role atmel_udc_usb_get_role(struct usb_role_switch *sw)
+{
+	struct usba_udc *udc = usb_role_switch_get_drvdata(sw);
+	struct device *dev = &udc->pdev->dev;
+	enum usb_role role = USB_ROLE_NONE;
+
+	mutex_lock(&udc->role_sw_lock);
+	role = udc->role;
+	mutex_unlock(&udc->role_sw_lock);
+
+	dev_dbg(dev, "udc_get_role (%d)\n", role);
+
+	return role;
+}
+
 static int usba_udc_probe(struct platform_device *pdev)
 {
 	struct resource *res;
 	struct clk *pclk, *hclk;
 	struct usba_udc *udc;
+	struct device *dev = &pdev->dev;
+	struct usb_role_switch_desc atmel_udc_role_switch_desc = { NULL };
 	int irq, ret, i;
 
-	udc = devm_kzalloc(&pdev->dev, sizeof(*udc), GFP_KERNEL);
+	udc = devm_kzalloc(dev, sizeof(*udc), GFP_KERNEL);
 	if (!udc)
 		return -ENOMEM;
 
-	dev_dbg(&pdev->dev, "Driver probing\n");
+	dev_dbg(dev, "usba_udc_probe\n");
 
 	udc->gadget = usba_gadget_template;
 	INIT_LIST_HEAD(&udc->gadget.ep_list);
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, CTRL_IOMEM_ID);
-	udc->regs = devm_ioremap_resource(&pdev->dev, res);
+	udc->regs = devm_ioremap_resource(dev, res);
 	if (IS_ERR(udc->regs))
 		return PTR_ERR(udc->regs);
+
 	dev_info(&pdev->dev, "MMIO registers at %pR mapped at %p\n", res,
 		 udc->regs);
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, FIFO_IOMEM_ID);
-	udc->fifo = devm_ioremap_resource(&pdev->dev, res);
+	udc->fifo = devm_ioremap_resource(dev, res);
 	if (IS_ERR(udc->fifo))
 		return PTR_ERR(udc->fifo);
-	dev_info(&pdev->dev, "FIFO at %pR mapped at %p\n", res, udc->fifo);
+	dev_info(dev, "FIFO at %pR mapped at %p\n", res, udc->fifo);
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0)
 		return irq;
 
-	pclk = devm_clk_get(&pdev->dev, "pclk");
+	pclk = devm_clk_get(dev, "pclk");
 	if (IS_ERR(pclk))
 		return PTR_ERR(pclk);
-	hclk = devm_clk_get(&pdev->dev, "hclk");
+	hclk = devm_clk_get(dev, "hclk");
 	if (IS_ERR(hclk))
 		return PTR_ERR(hclk);
 
 	spin_lock_init(&udc->lock);
-	mutex_init(&udc->vbus_mutex);
+	mutex_init(&udc->role_sw_lock);
+	udc->binded = false;
+	udc->started = false;
 	udc->pdev = pdev;
 	udc->pclk = pclk;
 	udc->hclk = hclk;
-	udc->id_pin = -ENODEV;
 
 	platform_set_drvdata(pdev, udc);
 
 	/* Make sure we start from a clean slate */
 	ret = clk_prepare_enable(pclk);
 	if (ret) {
-		dev_err(&pdev->dev, "Unable to enable pclk, aborting.\n");
+		dev_err(dev, "Unable to enable pclk, aborting.\n");
 		return ret;
 	}
 
-	dev_dbg(&pdev->dev, "Switch to host by default\n");
 	usba_writel(udc, CTRL, USBA_DISABLE_MASK);
 	clk_disable_unprepare(pclk);
 
@@ -2520,28 +2501,56 @@ static int usba_udc_probe(struct platform_device *pdev)
 	}
 	udc->irq = irq;
 
-	if (udc->vbus_pin) {
-		irq_set_status_flags(gpiod_to_irq(udc->vbus_pin), IRQ_NOAUTOEN);
-		ret = devm_request_threaded_irq(&pdev->dev,
-						gpiod_to_irq(udc->vbus_pin),
-						NULL, usba_vbus_irq_thread,
-						USBA_VBUS_IRQFLAGS,
-						"atmel_usba_udc", udc);
-		if (ret) {
-			udc->vbus_pin = NULL;
-			dev_warn(&udc->pdev->dev, "failed to request vbus irq; "
-						  "assuming always on\n");
-		}
-	}
-
-	ret = usb_add_gadget_udc(&pdev->dev, &udc->gadget);
+	ret = usb_add_gadget_udc(dev, &udc->gadget);
 	if (ret)
 		return ret;
-	device_init_wakeup(&pdev->dev, 1);
+	device_init_wakeup(dev, 1);
 
 	usba_init_debugfs(udc);
 	for (i = 1; i < udc->num_ep; i++)
 		usba_ep_init_debugfs(udc, &udc->usba_ep[i]);
+
+	udc->role = USB_ROLE_NONE;
+	if (device_property_read_bool(&pdev->dev, "usb-role-switch")) {
+		atmel_udc_role_switch_desc.fwnode = dev_fwnode(dev);
+		atmel_udc_role_switch_desc.get = atmel_udc_usb_get_role;
+		atmel_udc_role_switch_desc.set = atmel_udc_usb_set_role;
+		atmel_udc_role_switch_desc.driver_data = udc;
+		atmel_udc_role_switch_desc.userspace_enable = true;
+		atmel_udc_role_switch_desc.userspace_allow_write = false;
+
+		dev_info(dev, "Registering as USB role switch controller\n");
+		udc->role_sw = usb_role_switch_register(
+			dev, &atmel_udc_role_switch_desc);
+		if (IS_ERR(udc->role_sw)) {
+			dev_err(dev, "usb role sw register failed: %ld\n",
+				PTR_ERR(udc->role_sw));
+
+			usb_del_gadget_udc(&udc->gadget);
+
+			for (i = 1; i < udc->num_ep; i++)
+				usba_ep_cleanup_debugfs(&udc->usba_ep[i]);
+			usba_cleanup_debugfs(udc);
+
+			return PTR_ERR(udc->role_sw);
+		}
+	}
+
+	if (dev->of_node) {
+		ret = of_platform_populate(dev->of_node, NULL, NULL, dev);
+		if (ret < 0) {
+			dev_err(dev, "failed to populate DT children\n");
+
+			usb_role_switch_unregister(udc->role_sw);
+
+			device_init_wakeup(dev, 0);
+			usb_del_gadget_udc(&udc->gadget);
+
+			for (i = 1; i < udc->num_ep; i++)
+				usba_ep_cleanup_debugfs(&udc->usba_ep[i]);
+			usba_cleanup_debugfs(udc);
+		}
+	}
 
 	return 0;
 }
@@ -2549,11 +2558,16 @@ static int usba_udc_probe(struct platform_device *pdev)
 static int usba_udc_remove(struct platform_device *pdev)
 {
 	struct usba_udc *udc;
+	struct device *dev = &pdev->dev;
 	int i;
 
 	udc = platform_get_drvdata(pdev);
 
-	device_init_wakeup(&pdev->dev, 0);
+	dev_dbg(dev, "usba_udc_remove\n");
+
+	usb_role_switch_unregister(udc->role_sw);
+
+	device_init_wakeup(dev, 0);
 	usb_del_gadget_udc(&udc->gadget);
 
 	for (i = 1; i < udc->num_ep; i++)
@@ -2563,79 +2577,10 @@ static int usba_udc_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_PM_SLEEP
-static int usba_udc_suspend(struct device *dev)
-{
-	struct usba_udc *udc = dev_get_drvdata(dev);
-
-	dev_dbg(&udc->pdev->dev, "Power suspend\n");
-
-	/* Not started */
-	if (!udc->driver)
-		return 0;
-
-	mutex_lock(&udc->vbus_mutex);
-
-	if (!device_may_wakeup(dev)) {
-		udc->suspended = false;
-		usba_stop(udc);
-		goto out;
-	}
-
-	/*
-	 * Device may wake up. We stay clocked if we failed
-	 * to request vbus irq, assuming always on.
-	 */
-	if (udc->vbus_pin) {
-		/* FIXME: right to stop here...??? */
-		usba_stop(udc);
-		enable_irq_wake(gpiod_to_irq(udc->vbus_pin));
-	}
-
-	enable_irq_wake(udc->irq);
-
-out:
-	mutex_unlock(&udc->vbus_mutex);
-	return 0;
-}
-
-static int usba_udc_resume(struct device *dev)
-{
-	struct usba_udc *udc = dev_get_drvdata(dev);
-
-	dev_dbg(&udc->pdev->dev, "Power resume\n");
-
-	/* Not started */
-	if (!udc->driver)
-		return 0;
-
-	if (device_may_wakeup(dev)) {
-		if (udc->vbus_pin)
-			disable_irq_wake(gpiod_to_irq(udc->vbus_pin));
-
-		disable_irq_wake(udc->irq);
-	}
-
-	/* If Vbus is present, enable the controller and wait for reset */
-	mutex_lock(&udc->vbus_mutex);
-	udc->vbus_prev = vbus_is_present(udc);
-	if (udc->vbus_prev) {
-		phy_set_mode_ext(udc->phy, PHY_MODE_USB_DEVICE, 1);
-		usba_start(udc);
-	}
-	mutex_unlock(&udc->vbus_mutex);
-
-	return 0;
-}
-#endif
-
-static SIMPLE_DEV_PM_OPS(usba_udc_pm_ops, usba_udc_suspend, usba_udc_resume);
-
 static struct platform_driver udc_driver = {
 	.remove		= usba_udc_remove,
 	.driver		= {
 		.name		= "atmel_usba_udc",
-		.pm		= &usba_udc_pm_ops,
 		.of_match_table	= atmel_udc_dt_ids,
 	},
 };

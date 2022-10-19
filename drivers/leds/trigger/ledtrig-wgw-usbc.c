@@ -29,8 +29,8 @@ struct wgw_usbc_trig_data {
 	spinlock_t lock;
 
 	struct led_classdev *led_cdev;
-	struct device *usbc_dev;
-	struct wgw_ec_usbc_dev *usbc;
+	/* trigger object platform device */
+	struct platform_device *trig_pdev;
 
 	struct delayed_work work;
 	struct notifier_block notifier;
@@ -89,24 +89,33 @@ ATTRIBUTE_GROUPS(wgw_usbc_trig);
 static int wgw_usbc_trig_notify(struct notifier_block *notifier,
 				unsigned long evt, void *dv)
 {
+	struct wgw_ec_usbc_notification *notif =
+		(struct wgw_ec_usbc_notification *)dv;
 	struct wgw_usbc_trig_data *trigger_data =
 		container_of(notifier, struct wgw_usbc_trig_data, notifier);
 
-	pr_debug("wgw-usbc-trig notify notified by wgw-ec-usbc\n");
+	struct device *dev = trigger_data->led_cdev->dev;
 
-	if (evt == WGW_USBC_DATA_MODE_CHANGE) {
-		enum usb_data_mode data_mode =
-			wgw_ec_usbc_get_data_mode(trigger_data->usbc);
+	dev_dbg(dev, "wgw-usbc-trig notify notified by wgw-ec-usbc\n");
 
+	if (notif->dev != &trigger_data->trig_pdev->dev)
+	{
+		dev_dbg(dev, "LED trigger not concerned by the wgw-ec-usbc event\n");
+		return NOTIFY_DONE;
+	}
+
+	if (evt == WGW_USBC_DATA_MODE_CHANGE ||
+	    evt == WGW_USBC_DEVICE_PROBE ||
+	    evt == WGW_USBC_NOTIFIER_UPDATE) {
 		cancel_delayed_work_sync(&trigger_data->work);
 
 		pr_debug(
 			"trigger notified for data mode change, new value=%d\n",
-			data_mode);
+			notif->data_mode);
 
 		spin_lock_bh(&trigger_data->lock);
 		trigger_data->led_on =
-			(data_mode == USB_DATA_MODE_DEVICE ? 1 : 0);
+			(notif->data_mode == USB_DATA_MODE_DEVICE ? 1 : 0);
 		schedule_delayed_work(&trigger_data->work, 0);
 		spin_unlock_bh(&trigger_data->lock);
 
@@ -135,25 +144,27 @@ static int wgw_usbc_trig_activate(struct led_classdev *led_cdev)
 {
 	// retrieve the attached LED
 	struct device *dev = led_cdev->dev;
-	struct platform_device *pdev_trigger;
 	struct device_node *of_node;
 	struct of_phandle_args of_trigger_handle;
 	struct wgw_usbc_trig_data *trigger_data;
-	enum usb_data_mode data_mode;
-	int count, err, ret;
+	int ret = -ENODEV, count;
 
 	dev_dbg(dev, "wgw-usbc-trig activate\n");
 
 	if (!dev) {
 		pr_err("wgw-usbc-data-mode: no LED device attached\n");
-		return -ENODEV;
+		return ret;
 	}
 	dev_dbg(dev, "registering trigger for led %s\n", led_cdev->name);
+
+	trigger_data = kzalloc(sizeof(struct wgw_usbc_trig_data), GFP_KERNEL);
+	if (!trigger_data)
+		return -ENOMEM;
 
 	/* Retrieve the of node */
 	if (!dev->fwnode) {
 		dev_err(dev, "wgw-usbc-data-mode: no LED dev fwnode\n");
-		return -ENODEV;
+		return ret;
 	}
 	of_node = to_of_node(dev->fwnode);
 
@@ -162,28 +173,28 @@ static int wgw_usbc_trig_activate(struct led_classdev *led_cdev)
 					   "#trigger-source-cells");
 	if (count == -ENOENT) {
 		dev_err(dev, "wgw-usbc-data-mode: no trigger phandle found\n");
-		goto put_of_node;
+		return ret;
 	} else if (count < 0) {
 		dev_err(dev,
 			"wgw-usbc-data-mode: Failed to get trigger sources for %pOF\n",
 			of_node);
-		goto put_of_node;
+		return ret;
 	} else if (count != 1) {
 		dev_err(dev,
 			"wgw-usbc-data-mode: Too much trigger sources (%d), max is 1\n",
 			count);
-		goto put_of_node;
+		return ret;
 	}
 
 	/* Retrieve the trigger source phandle */
-	err = of_parse_phandle_with_args(of_node, "trigger-sources",
+	ret = of_parse_phandle_with_args(of_node, "trigger-sources",
 					 "#trigger-source-cells", 0,
 					 &of_trigger_handle);
-	if (err) {
+	if (ret) {
 		dev_err(dev,
 			"wgw-usbc-data-mode: Failed to get trigger source phandle: %d\n",
-			err);
-		goto put_of_node;
+			ret);
+		return ret;
 	}
 	/* Only supported trigger source is wgw-ec-usbc */
 	if (!of_device_is_compatible(of_trigger_handle.np,
@@ -193,56 +204,39 @@ static int wgw_usbc_trig_activate(struct led_classdev *led_cdev)
 			of_trigger_handle.np->name);
 		goto put_trigger_handle;
 	}
-	pdev_trigger = of_find_device_by_node(of_trigger_handle.np);
-	if (IS_ERR_OR_NULL(pdev_trigger)) {
+	trigger_data->trig_pdev = of_find_device_by_node(of_trigger_handle.np);
+	if (IS_ERR_OR_NULL(trigger_data->trig_pdev)) {
 		dev_err(dev,
 			"wgw-usbc-data-mode: platform device from of_device not found\n");
 		goto put_trigger_handle;
 	}
-	of_node_put(of_trigger_handle.np);
-	of_node_put(of_node);
-
-	trigger_data = kzalloc(sizeof(struct wgw_usbc_trig_data), GFP_KERNEL);
-	if (!trigger_data) {
-		goto put_device;
-	}
-
-	/* we know this plaftorm device contains a wgw_ec_usbc_dev */
-	trigger_data->usbc_dev = &pdev_trigger->dev;
-	trigger_data->usbc = (struct wgw_ec_usbc_dev *)dev_get_drvdata(
-		trigger_data->usbc_dev);
-
-	spin_lock_init(&trigger_data->lock);
-	trigger_data->notifier.notifier_call = wgw_usbc_trig_notify;
-	trigger_data->notifier.priority = 10;
-	INIT_DELAYED_WORK(&trigger_data->work, wgw_usbc_trig_work);
 
 	trigger_data->led_cdev = led_cdev;
+	trigger_data->led_on = 0;
+	trigger_data->enabled = 0;
+
+	spin_lock_init(&trigger_data->lock);
+	INIT_DELAYED_WORK(&trigger_data->work, wgw_usbc_trig_work);
+
 	led_set_trigger_data(led_cdev, trigger_data);
 
-	ret = blocking_notifier_chain_register(
-		&trigger_data->usbc->notifier_list, &trigger_data->notifier);
-	if (ret) {
-		kfree(trigger_data);
+	trigger_data->notifier.notifier_call = wgw_usbc_trig_notify;
+	trigger_data->notifier.priority = 10;
+	// prepare notifier
+	ret = wgw_ec_usbc_register_notifier(&trigger_data->notifier);
+	if (ret < 0) {
+		dev_err(dev, "error registering usbc notifier: %d\n", ret);
 		goto put_device;
 	}
 
-	/* Init LED state */
-	data_mode = wgw_ec_usbc_get_data_mode(trigger_data->usbc);
-	spin_lock_bh(&trigger_data->lock);
-	trigger_data->led_on = (data_mode == USB_DATA_MODE_DEVICE ? 1 : 0);
-	schedule_delayed_work(&trigger_data->work, 0);
-	spin_unlock_bh(&trigger_data->lock);
-
-	return ret;
+	of_node_put(of_trigger_handle.np);
+	return 0;
 
 put_device:
-	put_device(&pdev_trigger->dev);
+	put_device(&trigger_data->trig_pdev->dev);
 put_trigger_handle:
 	of_node_put(of_trigger_handle.np);
-put_of_node:
-	of_node_put(of_node);
-	return -ENODEV;
+	return ret;
 }
 
 static void wgw_usbc_trig_deactivate(struct led_classdev *led_cdev)
@@ -252,13 +246,12 @@ static void wgw_usbc_trig_deactivate(struct led_classdev *led_cdev)
 
 	pr_debug("wgw-usbc-trig deactivate\n");
 
-	blocking_notifier_chain_unregister(&trigger_data->usbc->notifier_list,
-					   &trigger_data->notifier);
+	wgw_ec_usbc_unregister_notifier(&trigger_data->notifier);
 
 	cancel_delayed_work_sync(&trigger_data->work);
 
-	if (trigger_data->usbc_dev)
-		put_device(trigger_data->usbc_dev);
+	if (trigger_data->trig_pdev)
+		put_device(&trigger_data->trig_pdev->dev);
 
 	kfree(trigger_data);
 }
