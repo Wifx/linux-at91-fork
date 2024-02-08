@@ -261,73 +261,6 @@ static int mem_slot_get(struct wgw_ec_dev *ec, u8 slot_index,
 	return slot->length;
 }
 
-static int mem_slot_set(struct wgw_ec_dev *ec, u8 slot_index,
-			const struct wgw_ec_memory_slot *slot)
-{
-	struct wgw_ec_device *ec_dev = ec->ec_dev;
-	char buffer[2];
-	int ret;
-
-	if (slot_index > 3) {
-		dev_err(ec->dev, "slot[%d] doesn't exist\n", slot_index);
-		return -EINVAL;
-	}
-
-	// XOR compare
-	if (!(slot->flags & WGW_EC_MEM_SLOT_SET) != !slot->length) {
-		dev_err(ec->dev, "slot[%d] length and flags don't match\n",
-			slot_index);
-		return -EINVAL;
-	}
-
-	buffer[0] = slot->flags;
-	buffer[1] = 0; // length has not effect
-	mutex_lock(&ec_dev->lock_ltr);
-	if (!slot->length) {
-		ret = ec_dev->write_block(
-			ec_dev, WGW_EC_REG_MEM_SLOT0_CTRL + slot_index, buffer,
-			2);
-		if (ret < 0) {
-			dev_err(ec->dev,
-				"failed to write memory slot[%d] ctrl register\n",
-				slot_index);
-			mutex_unlock(&ec_dev->lock_ltr);
-			return ret;
-		}
-		ret = wgw_ec_wait_ready(ec);
-	} else {
-		// write data
-		ec_dev->write_block(ec_dev, WGW_EC_REG_MEM_SLOT0 + slot_index,
-				    slot->data, slot->length);
-		if (ret < 0) {
-			dev_err(ec->dev,
-				"failed to write memory slot[%d] data register\n",
-				slot_index);
-			mutex_unlock(&ec_dev->lock_ltr);
-			return ret;
-		}
-		if ((ret = wgw_ec_wait_ready(ec)) < 0) {
-			mutex_unlock(&ec_dev->lock_ltr);
-			return ret;
-		}
-
-		// write control register
-		ec_dev->write_block(ec_dev,
-				    WGW_EC_REG_MEM_SLOT0_CTRL + slot_index,
-				    buffer, 2);
-		if (ret < 0) {
-			dev_err(ec->dev,
-				"failed to write memory slot[%d] ctrl register\n",
-				slot_index);
-			mutex_unlock(&ec_dev->lock_ltr);
-			return ret;
-		}
-		ret = wgw_ec_wait_ready(ec);
-	}
-	mutex_unlock(&ec_dev->lock_ltr);
-	return ret;
-}
-
 static int hw_info_get(struct wgw_ec_dev *ec, struct wgw_ec_hw_info *hw_info)
 {
 	struct wgw_ec_device *ec_dev = ec->ec_dev;
@@ -448,35 +381,6 @@ int serial_get(struct wgw_ec_dev *ec, struct wgw_ec_serial *serial)
 	return 0;
 }
 
-int wgw_ec_serial_set(struct wgw_ec_dev *ec, char *serial,
-		      struct wgw_ec_serial *serial_cache)
-{
-	struct wgw_ec_memory_slot slot;
-	size_t len;
-	int ret;
-
-	if ((len = strnlen(serial, WGW_EC_HW_SN_SIZE)) == WGW_EC_HW_SN_SIZE) {
-		dev_err(ec->dev, "set serial error: serial too long\n");
-		return -EINVAL;
-	}
-
-	if (!len) {
-		dev_err(ec->dev,
-			"set serial error: cannot be null (len = 0)\n");
-		return -EINVAL;
-	}
-
-	slot.flags = WGW_EC_MEM_SLOT_SET_OTP;
-	slot.length = len;
-	memcpy(slot.data, serial, len);
-	ret = mem_slot_set(ec, 0, &slot);
-	if (ret < 0) {
-		return ret;
-	}
-	return serial_get(ec, serial_cache);
-}
-EXPORT_SYMBOL_GPL(wgw_ec_serial_set);
-
 int wgw_ec_boot_state_get(struct wgw_ec_dev *ec, u8 *boot_state)
 {
 	struct wgw_ec_device *ec_dev = ec->ec_dev;
@@ -498,7 +402,7 @@ int wgw_ec_boot_state_clr_update(struct wgw_ec_dev *ec, u8 *boot_state)
 		dev_err(ec->dev, "failed to write to device\n");
 		return ret;
 	}
-	// update local cache
+	// return fresh value
 	return wgw_ec_boot_state_get(ec, boot_state);
 }
 EXPORT_SYMBOL_GPL(wgw_ec_boot_state_clr_update);
@@ -575,8 +479,7 @@ static int display_cache_info(struct wgw_ec_dev *ec)
 		goto failure;
 	}
 
-	if (cache->hw_info.model.id < 0 || cache->hw_info.variant.id < 0 ||
-	    cache->hw_info.frequency.id < 0) {
+	if (cache->hw_info.variant.id < 0 || cache->hw_info.frequency.id < 0) {
 		dev_err(dev,
 			"Product model, variant and/or frequency not detected or unknown\n");
 		goto failure;

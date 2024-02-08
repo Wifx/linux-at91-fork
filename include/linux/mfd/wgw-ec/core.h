@@ -134,9 +134,6 @@ extern int wgw_ec_unregister(struct wgw_ec_device *wgw_dev);
 extern int wgw_ec_get_ltr_status(struct wgw_ec_dev *ec);
 extern int wgw_ec_wait_ready(struct wgw_ec_dev *ec);
 
-extern int wgw_ec_serial_set(struct wgw_ec_dev *ec, char *serial,
-			     struct wgw_ec_serial *serial_cache);
-
 extern int wgw_ec_boot_state_get(struct wgw_ec_dev *ec, u8 *boot_state);
 extern int wgw_ec_boot_state_clr_update(struct wgw_ec_dev *ec, u8 *boot_state);
 

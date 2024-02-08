@@ -195,45 +195,6 @@ static ssize_t serial_show(struct device *dev, struct device_attribute *attr,
 	return len;
 }
 
-static ssize_t serial_store(struct device *dev, struct device_attribute *attr,
-			    const char *buf, size_t count)
-{
-	struct wgw_ec_dev *ec = to_wgw_ec_dev(dev);
-	struct wgw_ec_info *cache = &ec->cache_info;
-	char serial[WGW_EC_HW_SN_SIZE];
-	int ret = -EACCES;
-
-	mutex_lock(&ec->cache_lock);
-	// test if serial is writable
-	if (cache->serial.state & WGW_EC_SERIAL_OTP) {
-		dev_err(ec->dev, "serial is already set and not writable\n");
-		// the serial is set and cannot be overwritten
-		goto failure;
-	}
-
-	if (count == 1 || count > WGW_EC_HW_SN_SIZE ||
-	    sscanf(buf, "%s\n", serial) <= 0) {
-		// count contains \n which means 0 length
-		ret = -EINVAL;
-		goto failure;
-	}
-
-	ret = wgw_ec_serial_set(ec, serial, &cache->serial);
-	if (ret >= 0) {
-		if (strncmp(serial, cache->serial.data, WGW_EC_HW_SN_SIZE)) {
-			dev_err(ec->dev,
-				"read serial doesn't match the written one\n");
-			ret = -EINVAL;
-		}
-	}
-	mutex_unlock(&ec->cache_lock);
-	return ret < 0 ? ret : count;
-
-failure:
-	mutex_unlock(&ec->cache_lock);
-	return ret;
-}
-
 static ssize_t boot_state_show(struct device *dev,
 			       struct device_attribute *attr, char *buf)
 {
@@ -284,8 +245,7 @@ static DEVICE_ATTR_RO(fw_version);
 static DEVICE_ATTR_RO(fw_version_hash);
 static DEVICE_ATTR_RO(fw_version_date);
 static DEVICE_ATTR_RO(hw_version);
-static DEVICE_ATTR(serial, (S_IWUSR | S_IRUSR | S_IWGRP | S_IRGRP | S_IROTH),
-		   serial_show, serial_store);
+static DEVICE_ATTR_RO(serial);
 static DEVICE_ATTR(boot_state,
 		   (S_IWUSR | S_IRUSR | S_IWGRP | S_IRGRP | S_IROTH),
 		   boot_state_show, boot_state_store);
