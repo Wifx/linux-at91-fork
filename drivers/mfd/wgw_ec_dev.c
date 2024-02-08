@@ -17,8 +17,8 @@
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/mfd/core.h>
-#include <linux/module.h>
 #include <linux/mod_devicetable.h>
+#include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
@@ -80,14 +80,17 @@ static const char *unknown_str = "unknown";
 static const char *undefined_str = "undefined";
 static const char *error_str = "error";
 
-static const char *model_strs[] = { "lorix-one", "wifx-l1", "wifx-y1" };
-static const char *model_pretty_strs[] = { "LORIX One", "Wifx L1", "Wifx Y1" };
+static const char *model_strs[] = { "lorix-one", "wifx-l1", "wifx-y1",
+				    "wifx-l1-4g" };
+static const char *model_pretty_strs[] = { "LORIX One", "Wifx L1", "Wifx Y1",
+					   "Wifx L1 4G" };
 int model_index(enum wgw_ec_model model)
 {
 	switch (model) {
 	case WGW_EC_M_LORIX_ONE:
 	case WGW_EC_M_WIFX_L1:
 	case WGW_EC_M_WIFX_Y1:
+	case WGW_EC_M_WIFX_L1_4G:
 		return (int)model;
 	default:
 		return -1;
@@ -265,6 +268,7 @@ static int hw_info_get(struct wgw_ec_dev *ec, struct wgw_ec_hw_info *hw_info)
 {
 	struct wgw_ec_device *ec_dev = ec->ec_dev;
 	struct wgw_ec_reg reg;
+	struct wgw_ec_memory_slot slot;
 	int32_t ret;
 
 	ret = ec_dev->read_block(ec_dev, WGW_EC_REG_HW_INFO, reg.data);
@@ -280,6 +284,19 @@ static int hw_info_get(struct wgw_ec_dev *ec, struct wgw_ec_hw_info *hw_info)
 	hw_info->version = reg.hw_info.version;
 	hw_version_str(&reg.hw_info.version, hw_info->version_str,
 		       WGW_EC_HW_VERSION_SIZE);
+
+	// if model is Wifx L1, it could be also Wifx L1 4G
+	if (reg.hw_info.model == WGW_EC_M_WIFX_L1) {
+		ret = mem_slot_get(ec, 1, &slot);
+		// if error retrieving model override, we don't override base model
+		if (ret >= 0 && (slot.flags & WGW_EC_SERIAL_SET) &&
+		    slot.length == 1) {
+			if (slot.data[0] == WGW_EC_M_WIFX_L1_4G) {
+				reg.hw_info.model = WGW_EC_M_WIFX_L1_4G;
+			}
+		}
+	}
+
 	hw_info->model.id = model_index(reg.hw_info.model);
 	hw_info->model.str = model_str(reg.hw_info.model);
 	hw_info->variant.id = variant_index(reg.hw_info.variant);
@@ -474,8 +491,13 @@ static int display_cache_info(struct wgw_ec_dev *ec)
 	mutex_lock(&ec->cache_lock);
 
 	/* Verify the product is supported */
-	if (cache->hw_info.model.id != WGW_EC_M_WIFX_L1) {
-		dev_err(dev, "Unknown product detected\n");
+	switch (cache->hw_info.model.id) {
+	case WGW_EC_M_WIFX_L1:
+	case WGW_EC_M_WIFX_L1_4G:
+		break;
+	default:
+		dev_err(dev, "Unknown product detected (id=%d)\n",
+			cache->hw_info.model.id);
 		goto failure;
 	}
 

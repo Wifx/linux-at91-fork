@@ -42,6 +42,7 @@ enum wgw_ec_model {
 	WGW_EC_M_LORIX_ONE = 0,
 	WGW_EC_M_WIFX_L1 = 1,
 	WGW_EC_M_WIFX_Y1 = 2,
+	WGW_EC_M_WIFX_L1_4G = 3,
 };
 
 enum wgw_ec_variant {
