@@ -17,8 +17,8 @@
 #ifndef __LINUX_MFD_WGW_EC_CORE_H
 #define __LINUX_MFD_WGW_EC_CORE_H
 
-#include <linux/kernel.h>
 #include <linux/ioctl.h>
+#include <linux/kernel.h>
 #include <linux/mfd/wgw-ec/reg.h>
 #include <linux/platform_device.h>
 
@@ -28,14 +28,41 @@
 #define WGW_EC_FW_VERSION_SIZE 32
 #define WGW_EC_HW_SN_SIZE 16
 
-#define WGW_EC_SERIAL_ERROR (-1)
-#define WGW_EC_SERIAL_SET 0x01
-#define WGW_EC_SERIAL_OTP 0x02
-#define WGW_EC_SERIAL_SET_OTP (WGW_EC_SERIAL_SET | WGW_EC_SERIAL_OTP)
+#define WGW_EC_MEM_SLOT_COUNT 4
+#define WGW_EC_MEM_SLOT_DATA_SIZE 32
+#define WGW_EC_MEM_SLOT_STR_SIZE 31
 
-struct wgw_ec_serial {
-	char data[WGW_EC_HW_SN_SIZE];
+#define WGW_EC_MEM_SLOT_STATE_ERROR (-1)
+#define WGW_EC_MEM_SLOT_STATE_SET 0x01
+#define WGW_EC_MEM_SLOT_STATE_OTP 0x02
+#define WGW_EC_MEM_SLOT_STATE_SET_OTP                                          \
+	(WGW_EC_MEM_SLOT_STATE_SET | WGW_EC_MEM_SLOT_STATE_OTP)
+
+struct wgw_ec_slot_str {
+	// include space for '\0'
+	char data[WGW_EC_MEM_SLOT_STR_SIZE + 1];
 	u8 state;
+};
+
+struct wgw_ec_slot_u8 {
+	u8 value;
+	u8 state;
+};
+
+enum wgw_ec_mainboard_ref {
+	// LORIX One's PCB
+	WGW_EC_MB_WGW_L01_BASE = 0,
+	// Wifx L1's PCB (or w/o model in slot[1])
+	WGW_EC_MB_WGW_L02_BASE_L1 = 1,
+	// Wifx Y1 (Y-Linx)'s PCB
+	WGW_EC_MB_WGW_L02_BASE_Y1 = 2,
+	// Wifx L1's PCB overriden with Wifx L1 4G product model
+	WGW_EC_MB_WGW_L02_BASE_L1_4G = 3,
+};
+
+enum wgw_ec_mainboard_variant {
+	WGW_EC_MB_VARIANT_8XX = 0,
+	WGW_EC_MB_VARIANT_9XX = 1,
 };
 
 enum wgw_ec_model {
@@ -46,7 +73,8 @@ enum wgw_ec_model {
 };
 
 enum wgw_ec_variant {
-	WGW_EC_V_STANDARD = 0,
+	WGW_EC_V_8XX = 0,
+	WGW_EC_V_9XX = 1,
 };
 
 enum wgw_ec_frequency {
@@ -65,14 +93,6 @@ struct wgw_ec_hw_tuple_info {
 	const char *str;
 };
 
-struct wgw_ec_hw_info {
-	struct wgw_ec_version version;
-	char version_str[WGW_EC_HW_VERSION_SIZE];
-	struct wgw_ec_hw_tuple_info model;
-	struct wgw_ec_hw_tuple_info variant;
-	struct wgw_ec_hw_tuple_info frequency;
-};
-
 struct wgw_ec_fw_info {
 	struct wgw_ec_version version;
 	char version_str[WGW_EC_FW_VERSION_SIZE];
@@ -80,12 +100,26 @@ struct wgw_ec_fw_info {
 	char commit_date[WGW_EC_APP_COMMIT_DATE_SIZE];
 };
 
+struct wgw_ec_mainboard_info {
+	char version_str[WGW_EC_HW_VERSION_SIZE];
+	struct wgw_ec_hw_tuple_info model;
+	struct wgw_ec_hw_tuple_info base_model;
+	struct wgw_ec_hw_tuple_info variant;
+	struct wgw_ec_fw_info fw;
+};
+
+struct wgw_ec_product_info {
+	struct wgw_ec_slot_str serial;
+	struct wgw_ec_hw_tuple_info model;
+	struct wgw_ec_hw_tuple_info variant;
+	char version_str[WGW_EC_HW_VERSION_SIZE];
+};
+
 struct wgw_ec_info {
-	struct wgw_ec_fw_info fw_info;
-	struct wgw_ec_hw_info hw_info;
-	struct wgw_ec_serial serial;
-	u8 boot_state;
 	u8 protoc;
+	u8 boot_state;
+	struct wgw_ec_mainboard_info mainboard;
+	struct wgw_ec_product_info product;
 };
 
 #define WGW_EC_MEM_SLOT_SIZE 32

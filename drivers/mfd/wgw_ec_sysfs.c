@@ -14,9 +14,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-#include <linux/init.h>
 #include <linux/device.h>
 #include <linux/fs.h>
+#include <linux/init.h>
 #include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/notifier.h>
@@ -33,19 +33,7 @@
 static ssize_t dev_version_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%s\n", "2.0.0");
-}
-
-static ssize_t mem_ram_show(struct device *dev, struct device_attribute *attr,
-			    char *buf)
-{
-	return sprintf(buf, "%d\n", 256 * 1024);
-}
-
-static ssize_t mem_nand_show(struct device *dev, struct device_attribute *attr,
-			     char *buf)
-{
-	return sprintf(buf, "%d\n", 1024 * 1024);
+	return sprintf(buf, "%s\n", "3.0.0");
 }
 
 static ssize_t product_model_show(struct device *dev,
@@ -56,7 +44,7 @@ static ssize_t product_model_show(struct device *dev,
 	ssize_t len;
 
 	mutex_lock(&ec->cache_lock);
-	len = sprintf(buf, "%s\n", cache->hw_info.model.str);
+	len = sprintf(buf, "%s\n", cache->product.model.str);
 	mutex_unlock(&ec->cache_lock);
 	return len;
 }
@@ -69,7 +57,7 @@ static ssize_t product_model_id_show(struct device *dev,
 	u8 model_id;
 
 	mutex_lock(&ec->cache_lock);
-	model_id = cache->hw_info.model.id;
+	model_id = cache->product.model.id;
 	mutex_unlock(&ec->cache_lock);
 
 	return sprintf(buf, "%d\n", model_id);
@@ -83,7 +71,7 @@ static ssize_t product_variant_show(struct device *dev,
 	ssize_t len;
 
 	mutex_lock(&ec->cache_lock);
-	len = sprintf(buf, "%s\n", cache->hw_info.variant.str);
+	len = sprintf(buf, "%s\n", cache->product.variant.str);
 	mutex_unlock(&ec->cache_lock);
 	return len;
 }
@@ -96,54 +84,13 @@ static ssize_t product_variant_id_show(struct device *dev,
 	u8 variant_id;
 
 	mutex_lock(&ec->cache_lock);
-	variant_id = cache->hw_info.variant.id;
+	variant_id = cache->product.variant.id;
 	mutex_unlock(&ec->cache_lock);
 
 	return sprintf(buf, "%d\n", variant_id);
 }
 
-static ssize_t product_frequency_show(struct device *dev,
-				      struct device_attribute *attr, char *buf)
-{
-	struct wgw_ec_dev *ec = to_wgw_ec_dev(dev);
-	struct wgw_ec_info *cache = &ec->cache_info;
-	ssize_t len;
-
-	mutex_lock(&ec->cache_lock);
-	len = sprintf(buf, "%s\n", cache->hw_info.frequency.str);
-	mutex_unlock(&ec->cache_lock);
-	return len;
-}
-
-static ssize_t product_frequency_id_show(struct device *dev,
-					 struct device_attribute *attr,
-					 char *buf)
-{
-	struct wgw_ec_dev *ec = to_wgw_ec_dev(dev);
-	struct wgw_ec_info *cache = &ec->cache_info;
-	u8 frequency_id;
-
-	mutex_lock(&ec->cache_lock);
-	frequency_id = cache->hw_info.frequency.id;
-	mutex_unlock(&ec->cache_lock);
-
-	return sprintf(buf, "%d\n", frequency_id);
-}
-
-static ssize_t fw_version_show(struct device *dev,
-			       struct device_attribute *attr, char *buf)
-{
-	struct wgw_ec_dev *ec = to_wgw_ec_dev(dev);
-	struct wgw_ec_info *cache = &ec->cache_info;
-	ssize_t len;
-
-	mutex_lock(&ec->cache_lock);
-	len = sprintf(buf, "%s\n", cache->fw_info.version_str);
-	mutex_unlock(&ec->cache_lock);
-	return len;
-}
-
-static ssize_t fw_version_hash_show(struct device *dev,
+static ssize_t product_version_show(struct device *dev,
 				    struct device_attribute *attr, char *buf)
 {
 	struct wgw_ec_dev *ec = to_wgw_ec_dev(dev);
@@ -151,46 +98,20 @@ static ssize_t fw_version_hash_show(struct device *dev,
 	ssize_t len;
 
 	mutex_lock(&ec->cache_lock);
-	len = sprintf(buf, "%s\n", cache->fw_info.commit_hash);
+	len = sprintf(buf, "%s\n", cache->product.version_str);
 	mutex_unlock(&ec->cache_lock);
 	return len;
 }
 
-static ssize_t fw_version_date_show(struct device *dev,
-				    struct device_attribute *attr, char *buf)
+static ssize_t product_serial_show(struct device *dev,
+				   struct device_attribute *attr, char *buf)
 {
 	struct wgw_ec_dev *ec = to_wgw_ec_dev(dev);
 	struct wgw_ec_info *cache = &ec->cache_info;
 	ssize_t len;
 
 	mutex_lock(&ec->cache_lock);
-	len = sprintf(buf, "%s\n", cache->fw_info.commit_date);
-	mutex_unlock(&ec->cache_lock);
-	return len;
-}
-
-static ssize_t hw_version_show(struct device *dev,
-			       struct device_attribute *attr, char *buf)
-{
-	struct wgw_ec_dev *ec = to_wgw_ec_dev(dev);
-	struct wgw_ec_info *cache = &ec->cache_info;
-	ssize_t len;
-
-	mutex_lock(&ec->cache_lock);
-	len = sprintf(buf, "%s\n", cache->hw_info.version_str);
-	mutex_unlock(&ec->cache_lock);
-	return len;
-}
-
-static ssize_t serial_show(struct device *dev, struct device_attribute *attr,
-			   char *buf)
-{
-	struct wgw_ec_dev *ec = to_wgw_ec_dev(dev);
-	struct wgw_ec_info *cache = &ec->cache_info;
-	ssize_t len;
-
-	mutex_lock(&ec->cache_lock);
-	len = sprintf(buf, "%s\n", cache->serial.data);
+	len = sprintf(buf, "%s\n", cache->product.serial.data);
 	mutex_unlock(&ec->cache_lock);
 	return len;
 }
@@ -232,40 +153,88 @@ static ssize_t boot_state_store(struct device *dev,
 	return count;
 }
 
+static ssize_t mem_ram_show(struct device *dev, struct device_attribute *attr,
+			    char *buf)
+{
+	return sprintf(buf, "%d\n", 256 * 1024);
+}
+
+static ssize_t mem_nand_show(struct device *dev, struct device_attribute *attr,
+			     char *buf)
+{
+	return sprintf(buf, "%d\n", 1024 * 1024);
+}
+
+static ssize_t fw_version_show(struct device *dev,
+			       struct device_attribute *attr, char *buf)
+{
+	struct wgw_ec_dev *ec = to_wgw_ec_dev(dev);
+	struct wgw_ec_info *cache = &ec->cache_info;
+	ssize_t len;
+
+	mutex_lock(&ec->cache_lock);
+	len = sprintf(buf, "%s\n", cache->mainboard.fw.version_str);
+	mutex_unlock(&ec->cache_lock);
+	return len;
+}
+
+static ssize_t fw_version_hash_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	struct wgw_ec_dev *ec = to_wgw_ec_dev(dev);
+	struct wgw_ec_info *cache = &ec->cache_info;
+	ssize_t len;
+
+	mutex_lock(&ec->cache_lock);
+	len = sprintf(buf, "%s\n", cache->mainboard.fw.commit_hash);
+	mutex_unlock(&ec->cache_lock);
+	return len;
+}
+
+static ssize_t fw_version_date_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	struct wgw_ec_dev *ec = to_wgw_ec_dev(dev);
+	struct wgw_ec_info *cache = &ec->cache_info;
+	ssize_t len;
+
+	mutex_lock(&ec->cache_lock);
+	len = sprintf(buf, "%s\n", cache->mainboard.fw.commit_date);
+	mutex_unlock(&ec->cache_lock);
+	return len;
+}
+
 static DEVICE_ATTR_RO(dev_version);
-static DEVICE_ATTR_RO(mem_ram);
-static DEVICE_ATTR_RO(mem_nand);
 static DEVICE_ATTR_RO(product_model);
 static DEVICE_ATTR_RO(product_model_id);
 static DEVICE_ATTR_RO(product_variant);
 static DEVICE_ATTR_RO(product_variant_id);
-static DEVICE_ATTR_RO(product_frequency);
-static DEVICE_ATTR_RO(product_frequency_id);
-static DEVICE_ATTR_RO(fw_version);
-static DEVICE_ATTR_RO(fw_version_hash);
-static DEVICE_ATTR_RO(fw_version_date);
-static DEVICE_ATTR_RO(hw_version);
-static DEVICE_ATTR_RO(serial);
+static DEVICE_ATTR_RO(product_version);
+static DEVICE_ATTR_RO(product_serial);
 static DEVICE_ATTR(boot_state,
 		   (S_IWUSR | S_IRUSR | S_IWGRP | S_IRGRP | S_IROTH),
 		   boot_state_show, boot_state_store);
+static DEVICE_ATTR_RO(mem_ram);
+static DEVICE_ATTR_RO(mem_nand);
+static DEVICE_ATTR_RO(fw_version);
+static DEVICE_ATTR_RO(fw_version_hash);
+static DEVICE_ATTR_RO(fw_version_date);
 
 static struct attribute *wgw_attrs[] = {
 	&dev_attr_dev_version.attr,
-	&dev_attr_mem_ram.attr,
-	&dev_attr_mem_nand.attr,
 	&dev_attr_product_model.attr,
 	&dev_attr_product_model_id.attr,
 	&dev_attr_product_variant.attr,
 	&dev_attr_product_variant_id.attr,
-	&dev_attr_product_frequency.attr,
-	&dev_attr_product_frequency_id.attr,
+	&dev_attr_product_version.attr,
+	&dev_attr_product_serial.attr,
+	&dev_attr_boot_state.attr,
+	&dev_attr_mem_ram.attr,
+	&dev_attr_mem_nand.attr,
 	&dev_attr_fw_version.attr,
 	&dev_attr_fw_version_hash.attr,
 	&dev_attr_fw_version_date.attr,
-	&dev_attr_hw_version.attr,
-	&dev_attr_serial.attr,
-	&dev_attr_boot_state.attr,
+	/* sentinel */
 	NULL,
 };
 
