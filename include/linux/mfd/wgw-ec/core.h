@@ -61,8 +61,8 @@ enum wgw_ec_mainboard_ref {
 };
 
 enum wgw_ec_mainboard_variant {
-	WGW_EC_MB_VARIANT_8XX = 0,
-	WGW_EC_MB_VARIANT_9XX = 1,
+	WGW_EC_MB_VAR_8XX = 0,
+	WGW_EC_MB_VAR_9XX = 1,
 };
 
 enum wgw_ec_model {
@@ -72,14 +72,22 @@ enum wgw_ec_model {
 	WGW_EC_M_WIFX_L1_4G = 3,
 };
 
-enum wgw_ec_variant {
-	WGW_EC_V_8XX = 0,
-	WGW_EC_V_9XX = 1,
+/* Product model variants */
+#define WGW_EC_MODEL_VAR_UNDEFINED (-1)
+#define WGW_EC_MODEL_VAR_UNKNOWN (-2)
+#define WGW_EC_MODEL_VAR_ERROR (-3)
+
+enum wgw_ec_wifx_l1_variant {
+	WGW_EC_WIFX_L1_VAR_8XX = 0,
+	WGW_EC_WIFX_L1_VAR_9XX = 1,
+	WGW_EC_WIFX_L1_VAR_MAX = 2,
 };
 
-enum wgw_ec_frequency {
-	WGW_EC_F_863_870 = 0,
-	WGW_EC_F_902_928 = 1,
+enum wgw_ec_wifx_l1_4g_variant {
+	WGW_EC_WIFX_L1_4G_VAR_8XX_EU = 0,
+	WGW_EC_WIFX_L1_4G_VAR_9XX_AU = 1,
+	WGW_EC_WIFX_L1_4G_VAR_9XX_US = 2,
+	WGW_EC_WIFX_L1_4G_VAR_MAX = 3,
 };
 
 struct wgw_ec_version {
@@ -89,7 +97,7 @@ struct wgw_ec_version {
 };
 
 struct wgw_ec_hw_tuple_info {
-	u8 id;
+	s8 id;
 	const char *str;
 };
 

@@ -54,13 +54,17 @@ static ssize_t product_model_id_show(struct device *dev,
 {
 	struct wgw_ec_dev *ec = to_wgw_ec_dev(dev);
 	struct wgw_ec_info *cache = &ec->cache_info;
-	u8 model_id;
+	ssize_t len;
 
 	mutex_lock(&ec->cache_lock);
-	model_id = cache->product.model.id;
+	if (cache->product.model.id < 0) {
+		len = sprintf(buf, "%s\n", cache->product.model.str);
+	} else {
+		len = sprintf(buf, "%d\n", cache->product.model.id);
+	}
 	mutex_unlock(&ec->cache_lock);
 
-	return sprintf(buf, "%d\n", model_id);
+	return len;
 }
 
 static ssize_t product_variant_show(struct device *dev,
@@ -81,13 +85,17 @@ static ssize_t product_variant_id_show(struct device *dev,
 {
 	struct wgw_ec_dev *ec = to_wgw_ec_dev(dev);
 	struct wgw_ec_info *cache = &ec->cache_info;
-	u8 variant_id;
+	ssize_t len;
 
 	mutex_lock(&ec->cache_lock);
-	variant_id = cache->product.variant.id;
+	if (cache->product.variant.id < 0) {
+		len = sprintf(buf, "%s\n", cache->product.variant.str);
+	} else {
+		len = sprintf(buf, "%d\n", cache->product.variant.id);
+	}
 	mutex_unlock(&ec->cache_lock);
 
-	return sprintf(buf, "%d\n", variant_id);
+	return len;
 }
 
 static ssize_t product_version_show(struct device *dev,
